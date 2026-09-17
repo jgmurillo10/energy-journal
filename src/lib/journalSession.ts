@@ -9,6 +9,8 @@ const encoder = new TextEncoder();
 
 export const DEVICE_COOKIE = "ej_device";
 export const DEVICE_HEADER = "x-journal-device";
+/** Cookie-less clients (the mobile app) send their signed device token here instead. */
+export const TOKEN_HEADER = "x-journal-token";
 export const SESSION_COOKIE = "ej_session";
 
 /** `expires_at` is only set on magic-link tokens, which must not outlive the email that carried them. */

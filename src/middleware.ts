@@ -3,6 +3,7 @@ import {
   createJournalToken,
   DEVICE_COOKIE,
   DEVICE_HEADER,
+  TOKEN_HEADER,
   journalIdFromToken,
 } from "@/lib/journalSession";
 
@@ -12,11 +13,25 @@ import {
  * else's journal. Once the person signs in, the journal moves under their account id instead.
  */
 export async function middleware(request: NextRequest) {
+  // The mobile app has no cookie jar, so it carries the same signed token in a header.
+  const bearer = request.headers.get(TOKEN_HEADER) ?? undefined;
+  const bearerId = await journalIdFromToken(bearer);
+  if (bearerId) {
+    const headers = new Headers(request.headers);
+    headers.set(DEVICE_HEADER, bearerId);
+    return NextResponse.next({ request: { headers } });
+  }
+
   const cookieToken = request.cookies.get(DEVICE_COOKIE)?.value;
   const existing = await journalIdFromToken(cookieToken);
   const token = existing && cookieToken ? cookieToken : await createJournalToken();
   const id = existing ?? (await journalIdFromToken(token));
-  if (!id) return NextResponse.next();
+  if (!id) {
+    // Never let a caller name its own journal.
+    const headers = new Headers(request.headers);
+    headers.delete(DEVICE_HEADER);
+    return NextResponse.next({ request: { headers } });
+  }
 
   const headers = new Headers(request.headers);
   headers.set(DEVICE_HEADER, id);

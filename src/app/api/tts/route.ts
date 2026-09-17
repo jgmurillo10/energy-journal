@@ -6,10 +6,18 @@ const DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"; // Sarah — warm, reassuring
 const MODEL = "eleven_turbo_v2_5";
 
 export async function POST(request: Request) {
+  const { text } = (await request.json()) as { text?: string };
+  return speak(text);
+}
+
+/** The mobile app streams the audio straight into its player, which needs a plain URL. */
+export async function GET(request: Request) {
+  return speak(new URL(request.url).searchParams.get("text") ?? undefined);
+}
+
+async function speak(text: string | undefined) {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "ELEVENLABS_API_KEY is not configured" }, { status: 503 });
-
-  const { text } = (await request.json()) as { text?: string };
   if (!text?.trim()) return NextResponse.json({ error: "text is required" }, { status: 400 });
 
   const voiceId = process.env.ELEVENLABS_VOICE_ID ?? DEFAULT_VOICE;

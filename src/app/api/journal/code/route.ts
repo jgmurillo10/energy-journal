@@ -22,8 +22,10 @@ export async function POST(request: Request) {
   const trimmed = code?.trim().toLowerCase() ?? "";
   if (!UUID.test(trimmed)) return NextResponse.json({ error: "that code is not valid" }, { status: 400 });
 
-  const response = NextResponse.json({ ok: true });
-  response.cookies.set(DEVICE_COOKIE, await createJournalToken(trimmed), {
+  const token = await createJournalToken(trimmed);
+  // The mobile app keeps the token itself; browsers use the cookie.
+  const response = NextResponse.json({ ok: true, token });
+  response.cookies.set(DEVICE_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

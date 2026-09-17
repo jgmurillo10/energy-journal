@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Energy Journal",
+    "slug": "energy-journal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#05070d",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.energyjournal.mobile"
+    },
+    "android": {
+      "package": "app.energyjournal.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#05070d",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Energy Journal listens so you can answer out loud."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
