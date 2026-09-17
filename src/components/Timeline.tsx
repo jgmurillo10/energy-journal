@@ -40,6 +40,7 @@ export default function Timeline({ entries, onDelete }: { entries: Entry[]; onDe
                   <span>{style.emoji}</span>
                   <span>{formatDate(entry.created_at)}</span>
                   {entry.source === "voice" && <span className="text-xs text-emerald-300/70">· voice</span>}
+                  {entry.analyzed_by && <span className="text-xs text-white/25">· {entry.analyzed_by}</span>}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="rounded-full bg-black/30 px-3 py-1 text-xs font-medium text-emerald-300">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import VoiceField from "./VoiceField";
+import { analyzeEntryOnDevice } from "@/lib/localLlm";
 import type { Entry, Mood } from "@/lib/types";
 
 const MOODS: { key: Mood | "auto"; label: string; emoji: string }[] = [
@@ -27,6 +28,7 @@ export default function Composer({ onSaved }: { onSaved: (entry: Entry, summary:
     setSaving(true);
     setError(null);
     try {
+      const analysis = await analyzeEntryOnDevice(text);
       const res = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,6 +36,7 @@ export default function Composer({ onSaved }: { onSaved: (entry: Entry, summary:
           text,
           mood: mood === "auto" ? undefined : mood,
           energy: useReportedEnergy ? energy : undefined,
+          analysis: analysis ?? undefined,
         }),
       });
       if (!res.ok) throw new Error("Could not save the entry");
@@ -109,7 +112,7 @@ export default function Composer({ onSaved }: { onSaved: (entry: Entry, summary:
         disabled={saving}
         className="mt-5 w-full rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300 disabled:opacity-50"
       >
-        {saving ? "Saving..." : "Save to journal"}
+        {saving ? "Reading your entry..." : "Save to journal"}
       </button>
     </section>
   );

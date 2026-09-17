@@ -1,7 +1,7 @@
 "use client";
 
 import { extractEnjoys, extractGender, extractName } from "./extract";
-import type { ExtractionMethod, ProfileField } from "./types";
+import type { ExtractionMethod, Mood, ProfileField, Trigger } from "./types";
 
 /**
  * On-device extraction of a short answer from a spoken sentence.
@@ -93,4 +93,64 @@ export async function extractField(
   }
 
   return { value: rules(field, text), method: "rules" };
+}
+
+export type LocalEntryAnalysis = {
+  mood: Mood;
+  energy: number;
+  summary: string;
+  triggers: Trigger[];
+};
+
+const ENTRY_SYSTEM =
+  "You read a personal journal entry and reply with JSON only: " +
+  '{"mood":"good"|"neutral"|"bad","energy":0-100,"summary":"one short sentence addressed to the person",' +
+  '"triggers":[{"label":"short label","category":"work|sleep|exercise|social|family|food|health|money|creative|screen|nature|commute|other","polarity":"positive"|"negative","evidence":"quote from the entry"}]}. ' +
+  "Energy is how charged their battery sounds. Triggers are the concrete things that caused the feelings.";
+
+function parseEntryAnalysis(raw: string): LocalEntryAnalysis | null {
+  const json = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as Partial<LocalEntryAnalysis>;
+    const moods: Mood[] = ["good", "neutral", "bad"];
+    if (!parsed.mood || !moods.includes(parsed.mood)) return null;
+    if (typeof parsed.energy !== "number" || Number.isNaN(parsed.energy)) return null;
+    const triggers = (Array.isArray(parsed.triggers) ? parsed.triggers : [])
+      .filter(
+        (t): t is Trigger =>
+          !!t && typeof t.label === "string" && (t.polarity === "positive" || t.polarity === "negative"),
+      )
+      .slice(0, 6)
+      .map((t) => ({
+        label: t.label.slice(0, 40),
+        category: typeof t.category === "string" ? t.category.slice(0, 24) : "other",
+        polarity: t.polarity,
+        evidence: typeof t.evidence === "string" ? t.evidence.slice(0, 160) : "",
+      }));
+    return {
+      mood: parsed.mood,
+      energy: Math.max(0, Math.min(100, Math.round(parsed.energy))),
+      summary: typeof parsed.summary === "string" ? parsed.summary.slice(0, 200) : "",
+      triggers,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Mood, battery and triggers from the browser's built-in model; null when it is not there. */
+export async function analyzeEntryOnDevice(text: string): Promise<LocalEntryAnalysis | null> {
+  const model = api();
+  if (!model || !text.trim()) return null;
+  let session: LanguageModelSession | null = null;
+  try {
+    if ((await model.availability()) !== "available") return null;
+    session = await model.create({ initialPrompts: [{ role: "system", content: ENTRY_SYSTEM }] });
+    return parseEntryAnalysis(await session.prompt(`Entry: ${text.trim()}`));
+  } catch {
+    return null;
+  } finally {
+    session?.destroy();
+  }
 }

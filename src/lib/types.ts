@@ -46,4 +46,6 @@ export type Entry = {
   energy: number;
   battery: number;
   triggers: Trigger[];
+  /** Which analyser produced the mood, battery and triggers. */
+  analyzed_by?: string;
 };
