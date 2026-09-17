@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -82,6 +83,8 @@ export default function DashboardScreen({ profile, onOpenSettings }: { profile: 
     <ScrollView
       style={styles.root}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor="#34d399" />}
     >
       <View style={styles.header}>
@@ -131,9 +134,25 @@ export default function DashboardScreen({ profile, onOpenSettings }: { profile: 
               placeholderTextColor="rgba(255,255,255,0.3)"
               style={styles.input}
               multiline
+              autoFocus
             />
-            <Pressable onPress={() => void submit(draft, 'text')} style={styles.submit}>
+            <Pressable
+              onPress={() => {
+                Keyboard.dismiss();
+                void submit(draft, 'text');
+              }}
+              style={styles.submit}
+            >
               <Text style={styles.submitText}>{saving ? 'Saving...' : 'Save to journal'}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                Keyboard.dismiss();
+                setTyping(false);
+                setDraft('');
+              }}
+            >
+              <Text style={styles.link}>Cancel</Text>
             </Pressable>
           </View>
         ) : (
