@@ -14,7 +14,7 @@ const STEPS: { key: StepKey; question: string }[] = [
   { key: "firstDay", question: "Last one. How was your day today?" },
 ];
 
-type Phase = "intro" | "speaking" | "listening" | "thinking" | "saving";
+type Phase = "intro" | "permission" | "speaking" | "listening" | "thinking" | "saving";
 
 /** Quiet time after speech that auto-submits the answer. */
 const SILENCE_MS = 2500;
@@ -97,6 +97,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
     start,
     stop,
     cancel,
+    requestPermission,
   } = useVoiceCapture((text) => {
     commit(stepIndexRef.current, text);
   }, SILENCE_MS);
@@ -109,22 +110,35 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
   const hint =
     phase === "intro"
       ? "Tap the orb to begin"
-      : phase === "speaking"
-        ? "Listen"
-        : micState === "recording"
-          ? "Tap when you're done — or just pause"
-          : micState === "transcribing"
-            ? "Transcribing"
-            : phase === "saving"
-              ? "Setting things up"
-              : "Tap to answer";
+      : phase === "permission"
+        ? "Allow the microphone"
+        : phase === "speaking"
+          ? "Listen"
+          : micState === "starting"
+            ? "Getting the mic ready"
+            : micState === "recording"
+              ? "Tap when you're done — or just pause"
+              : micState === "transcribing"
+                ? "Transcribing"
+                : phase === "saving"
+                  ? "Setting things up"
+                  : "Tap to answer";
 
   function handleOrbClick() {
     setError(null);
     if (phase === "intro") {
-      void ask(0);
+      setPhase("permission");
+      void requestPermission().then((granted) => {
+        if (granted) {
+          void ask(0);
+        } else {
+          setPhase("listening");
+          setTyping(true);
+        }
+      });
       return;
     }
+    if (phase === "permission" || micState === "starting") return;
     if (phase === "speaking") {
       stopSpeaking();
       setSpeechLevel(0);
@@ -148,7 +162,9 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
           key={stepIndex}
           className="min-h-[4.5rem] animate-[fadeIn_600ms_ease-out] text-center text-2xl font-light leading-snug text-white/90 sm:text-3xl"
         >
-          {phase === "intro" ? "Let's set up your energy journal." : STEPS[stepIndex].question}
+          {phase === "intro" || phase === "permission"
+            ? "Let's set up your energy journal."
+            : STEPS[stepIndex].question}
         </p>
 
         <Orb mode={mode} level={level} onClick={handleOrbClick} label={hint} />
@@ -193,7 +209,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
 
           {(error ?? micError) && <p className="mt-3 text-sm text-rose-300">{error ?? micError}</p>}
 
-          {phase !== "intro" && phase !== "saving" && !typing && (
+          {phase !== "intro" && phase !== "permission" && phase !== "saving" && !typing && (
             <button
               type="button"
               onClick={() => {
@@ -212,7 +228,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
             <span
               key={s.key}
               className={`h-1.5 rounded-full transition-all duration-500 ${
-                i === stepIndex && phase !== "intro" ? "w-8 bg-emerald-300" : i < stepIndex ? "w-4 bg-emerald-300/40" : "w-4 bg-white/10"
+                i === stepIndex && phase !== "intro" && phase !== "permission" ? "w-8 bg-emerald-300" : i < stepIndex ? "w-4 bg-emerald-300/40" : "w-4 bg-white/10"
               }`}
             />
           ))}

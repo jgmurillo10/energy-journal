@@ -77,9 +77,16 @@ export default function Home() {
             Hey {profile.name.split(" ")[0]}, how&apos;s your battery?
           </h1>
           {profile.enjoys && (
-            <p className="mt-1 max-w-xl text-sm text-white/40">You told me you enjoy {profile.enjoys}</p>
+            <p className="mt-1 line-clamp-2 max-w-xl text-sm text-white/40">You told me you enjoy {profile.enjoys}</p>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => setProfile(null)}
+          className="text-xs uppercase tracking-[0.2em] text-white/30 transition hover:text-white/70"
+        >
+          Redo setup
+        </button>
       </header>
 
       {flash && (

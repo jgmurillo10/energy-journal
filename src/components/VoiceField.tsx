@@ -17,6 +17,7 @@ export default function VoiceField({ value, onChange, placeholder, rows = 3 }: P
   );
   const recording = state === "recording";
   const transcribing = state === "transcribing";
+  const starting = state === "starting";
 
   return (
     <div className="space-y-3">
@@ -32,8 +33,16 @@ export default function VoiceField({ value, onChange, placeholder, rows = 3 }: P
           size="sm"
           mode={recording ? "listening" : transcribing ? "thinking" : "idle"}
           level={level}
-          onClick={() => (recording ? stop() : transcribing ? undefined : void start())}
-          label={recording ? "Tap when done — or pause" : transcribing ? "Transcribing" : "Tap to speak"}
+          onClick={() => (recording ? stop() : transcribing || starting ? undefined : void start())}
+          label={
+            recording
+              ? "Tap when done — or pause"
+              : starting
+                ? "Getting the mic ready"
+                : transcribing
+                  ? "Transcribing"
+                  : "Tap to speak"
+          }
         />
         {recording && (
           <button

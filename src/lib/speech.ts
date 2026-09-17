@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type RecorderState = "idle" | "recording" | "transcribing";
+export type RecorderState = "idle" | "starting" | "recording" | "transcribing";
 
 function pickMimeType(): string | undefined {
   if (typeof MediaRecorder === "undefined") return undefined;
@@ -11,6 +11,10 @@ function pickMimeType(): string | undefined {
 }
 
 const SILENCE_LEVEL = 0.06;
+/** Sampling period of the loudness meter; an interval keeps running when the screen dims. */
+const TICK_MS = 50;
+/** Hard stop so a noisy room can never record forever. */
+const MAX_RECORDING_MS = 90_000;
 
 /**
  * Records microphone audio and transcribes it with ElevenLabs Scribe via /api/stt.
@@ -24,7 +28,8 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const frameRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const callbackRef = useRef(onTranscript);
   callbackRef.current = onTranscript;
   const cancelledRef = useRef(false);
@@ -34,8 +39,10 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
   silenceRef.current = silenceMs;
 
   const cleanup = useCallback(() => {
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-    frameRef.current = null;
+    if (timerRef.current !== null) clearInterval(timerRef.current);
+    timerRef.current = null;
+    if (maxTimerRef.current !== null) clearTimeout(maxTimerRef.current);
+    maxTimerRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     void audioContextRef.current?.close().catch(() => {});
@@ -70,15 +77,11 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
           quietSinceRef.current = null;
         } else if (spokeRef.current) {
           quietSinceRef.current ??= performance.now();
-          if (performance.now() - quietSinceRef.current > silenceRef.current) {
-            stopRecorder();
-            return;
-          }
+          if (performance.now() - quietSinceRef.current > silenceRef.current) stopRecorder();
         }
       }
-      frameRef.current = requestAnimationFrame(tick);
     };
-    tick();
+    timerRef.current = setInterval(tick, TICK_MS);
   }, [stopRecorder]);
 
   const transcribe = useCallback(async (blob: Blob) => {
@@ -101,6 +104,7 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
 
   const start = useCallback(async () => {
     setError(null);
+    setState("starting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -122,6 +126,7 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
       };
       recorderRef.current = recorder;
       recorder.start();
+      maxTimerRef.current = setTimeout(stopRecorder, MAX_RECORDING_MS);
       setState("recording");
     } catch (e) {
       cleanup();
@@ -132,7 +137,19 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
           : "No microphone available. You can type instead.",
       );
     }
-  }, [cleanup, monitorLevel, transcribe]);
+  }, [cleanup, monitorLevel, stopRecorder, transcribe]);
+
+  /** Triggers the browser permission prompt up front so recording never starts before access. */
+  const requestPermission = useCallback(async (): Promise<boolean> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      return true;
+    } catch {
+      setError("Microphone access was blocked. Allow it, or type your answer instead.");
+      return false;
+    }
+  }, []);
 
   const stop = useCallback(() => {
     stopRecorder();
@@ -143,7 +160,7 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
     stopRecorder();
   }, [stopRecorder]);
 
-  return { state, error, level, start, stop, cancel, setError };
+  return { state, error, level, start, stop, cancel, setError, requestPermission };
 }
 
 let currentAudio: HTMLAudioElement | null = null;
