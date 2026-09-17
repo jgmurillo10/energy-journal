@@ -5,6 +5,7 @@ import Composer from "@/components/Composer";
 import EnergyChart from "@/components/EnergyChart";
 import InsightsPanel from "@/components/InsightsPanel";
 import Onboarding from "@/components/Onboarding";
+import ProfilePanel from "@/components/ProfilePanel";
 import Timeline from "@/components/Timeline";
 import type { Insights } from "@/lib/insights";
 import type { Entry, Profile } from "@/lib/types";
@@ -24,6 +25,7 @@ export default function Home() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [insights, setInsights] = useState<Insights>(EMPTY_INSIGHTS);
   const [flash, setFlash] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/entries");
@@ -80,14 +82,27 @@ export default function Home() {
             <p className="mt-1 line-clamp-2 max-w-xl text-sm text-white/40">You told me you enjoy {profile.enjoys}</p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setProfile(null)}
-          className="text-xs uppercase tracking-[0.2em] text-white/30 transition hover:text-white/70"
-        >
-          Redo setup
-        </button>
+        <div className="flex gap-4">
+          <button
+            type="button"
+            onClick={() => setEditing((open) => !open)}
+            className="text-xs uppercase tracking-[0.2em] text-white/30 transition hover:text-white/70"
+          >
+            Edit details
+          </button>
+          <button
+            type="button"
+            onClick={() => setProfile(null)}
+            className="text-xs uppercase tracking-[0.2em] text-white/30 transition hover:text-white/70"
+          >
+            Redo setup
+          </button>
+        </div>
       </header>
+
+      {editing && (
+        <ProfilePanel profile={profile} onSaved={setProfile} onClose={() => setEditing(false)} />
+      )}
 
       {flash && (
         <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">

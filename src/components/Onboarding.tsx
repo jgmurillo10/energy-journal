@@ -3,7 +3,8 @@
 import { useCallback, useRef, useState } from "react";
 import Orb, { type OrbMode } from "./Orb";
 import { speak, stopSpeaking, useVoiceCapture } from "@/lib/speech";
-import type { Profile } from "@/lib/types";
+import { extractField } from "@/lib/localLlm";
+import type { ExtractionMethod, Profile, ProfileField } from "@/lib/types";
 
 type StepKey = "name" | "gender" | "enjoys" | "firstDay";
 
@@ -33,10 +34,19 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
     async (answers: Record<StepKey, string>) => {
       setPhase("saving");
       try {
+        // Clean up the spoken sentences on the device; the server keeps both versions.
+        const fields: ProfileField[] = ["name", "gender", "enjoys"];
+        const processed: Partial<Record<ProfileField, string>> = {};
+        const methods: Partial<Record<ProfileField, ExtractionMethod>> = {};
+        for (const field of fields) {
+          const { value, method } = await extractField(field, answers[field]);
+          processed[field] = value;
+          methods[field] = method;
+        }
         const res = await fetch("/api/profile", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(answers),
+          body: JSON.stringify({ ...answers, processed, methods }),
         });
         if (!res.ok) throw new Error("Could not save your profile");
         const { profile } = (await res.json()) as { profile: Profile };
