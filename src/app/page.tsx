@@ -1,103 +1,114 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Composer from "@/components/Composer";
+import EnergyChart from "@/components/EnergyChart";
+import InsightsPanel from "@/components/InsightsPanel";
+import Onboarding from "@/components/Onboarding";
+import Timeline from "@/components/Timeline";
+import type { Insights } from "@/lib/insights";
+import type { Entry, Profile } from "@/lib/types";
+
+const EMPTY_INSIGHTS: Insights = {
+  entryCount: 0,
+  averageBattery: 0,
+  streakDays: 0,
+  moodCounts: { good: 0, neutral: 0, bad: 0 },
+  boosters: [],
+  drainers: [],
+};
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [insights, setInsights] = useState<Insights>(EMPTY_INSIGHTS);
+  const [flash, setFlash] = useState<string | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+  const refresh = useCallback(async () => {
+    const res = await fetch("/api/entries");
+    const data = (await res.json()) as { entries: Entry[]; insights: Insights };
+    setEntries(data.entries);
+    setInsights(data.insights);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const res = await fetch("/api/profile");
+      const { profile: loaded } = (await res.json()) as { profile: Profile | null };
+      setProfile(loaded);
+      if (loaded) await refresh();
+      setLoading(false);
+    })();
+  }, [refresh]);
+
+  async function handleDelete(id: number) {
+    await fetch(`/api/entries/${id}`, { method: "DELETE" });
+    await refresh();
+  }
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center text-white/40">
+        <p className="animate-pulse">Warming up your journal...</p>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+    );
+  }
+
+  if (!profile) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-5 py-12">
+        <Onboarding
+          onDone={async (created) => {
+            setProfile(created);
+            await refresh();
+          }}
+        />
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto w-full max-w-5xl px-5 py-10">
+      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.25em] text-emerald-300/70">Energy journal</p>
+          <h1 className="mt-2 text-3xl font-semibold text-white">
+            Hey {profile.name.split(" ")[0]}, how&apos;s your battery?
+          </h1>
+          {profile.enjoys && (
+            <p className="mt-1 max-w-xl text-sm text-white/40">You told me you enjoy {profile.enjoys}</p>
+          )}
+        </div>
+      </header>
+
+      {flash && (
+        <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+          {flash}
+        </div>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        <div className="space-y-6">
+          <Composer
+            onSaved={async (_entry, summary) => {
+              setFlash(summary);
+              await refresh();
+            }}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+            <h2 className="mb-4 text-lg font-semibold text-white">Energy over time</h2>
+            <EnergyChart entries={entries} />
+          </section>
+          <section>
+            <h2 className="mb-4 text-lg font-semibold text-white">Your notes</h2>
+            <Timeline entries={entries} onDelete={handleDelete} />
+          </section>
+        </div>
+        <div className="lg:sticky lg:top-10 lg:self-start">
+          <InsightsPanel insights={insights} />
+        </div>
+      </div>
+    </main>
   );
 }
