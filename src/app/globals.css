@@ -17,3 +17,97 @@ body {
 ::selection {
   background: rgba(52, 211, 153, 0.35);
 }
+
+.orb-core {
+  position: relative;
+  display: block;
+  width: var(--orb-size, 13rem);
+  height: var(--orb-size, 13rem);
+  border-radius: 9999px;
+  overflow: hidden;
+  transition: transform 90ms ease-out, box-shadow 160ms ease-out;
+  animation: orb-float 7s ease-in-out infinite;
+}
+
+.orb-shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.85), transparent 45%);
+  mix-blend-mode: screen;
+}
+
+.orb-swirl {
+  position: absolute;
+  inset: -35%;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0.35) 90deg,
+    rgba(255, 255, 255, 0) 200deg,
+    rgba(255, 255, 255, 0.25) 300deg,
+    rgba(255, 255, 255, 0) 360deg
+  );
+  filter: blur(18px);
+  animation: orb-spin 12s linear infinite;
+}
+
+.orb-ripple {
+  position: absolute;
+  width: var(--orb-size, 13rem);
+  height: var(--orb-size, 13rem);
+  border-radius: 9999px;
+  border: 1px solid var(--orb-glow, rgba(255, 255, 255, 0.3));
+  animation: orb-ripple 3.6s ease-out infinite;
+}
+
+.orb-ripple--delayed {
+  animation-delay: 1.3s;
+}
+
+@keyframes orb-ripple {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.75);
+    opacity: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orb-float {
+  0%,
+  100% {
+    translate: 0 -6px;
+  }
+  50% {
+    translate: 0 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-core,
+  .orb-swirl,
+  .orb-ripple {
+    animation: none;
+  }
+}

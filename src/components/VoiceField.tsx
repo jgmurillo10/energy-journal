@@ -1,5 +1,6 @@
 "use client";
 
+import Orb from "./Orb";
 import { useVoiceCapture } from "@/lib/speech";
 
 type Props = {
@@ -25,31 +26,15 @@ export default function VoiceField({ value, onChange, placeholder, rows = 3 }: P
         placeholder={transcribing ? "Transcribing with ElevenLabs..." : placeholder}
         className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 p-4 text-base text-white outline-none transition placeholder:text-white/30 focus:border-emerald-400/60"
       />
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => (recording ? stop() : void start())}
-          disabled={transcribing}
-          className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition disabled:opacity-60 ${
-            recording ? "bg-rose-500/90 text-white" : "bg-emerald-400/90 text-emerald-950 hover:bg-emerald-300"
-          }`}
-          style={recording ? { boxShadow: `0 0 0 ${4 + level * 14}px rgba(244,63,94,0.15)` } : undefined}
-        >
-          <span className={`inline-block h-2 w-2 rounded-full ${recording ? "animate-pulse bg-white" : "bg-emerald-900"}`} />
-          {recording ? "Stop & transcribe" : transcribing ? "Transcribing..." : "Record answer"}
-        </button>
-        {recording && (
-          <div className="flex h-6 items-end gap-[3px]">
-            {[0.25, 0.6, 1, 0.6, 0.25].map((weight, i) => (
-              <span
-                key={i}
-                className="w-[3px] rounded-full bg-emerald-300 transition-all"
-                style={{ height: `${Math.max(4, level * 24 * weight + 4)}px` }}
-              />
-            ))}
-          </div>
-        )}
-        {error && <span className="text-xs text-rose-300/90">{error}</span>}
+      <div className="flex flex-col items-center gap-2 pt-2">
+        <Orb
+          size="sm"
+          mode={recording ? "listening" : transcribing ? "thinking" : "idle"}
+          level={level}
+          onClick={() => (recording ? stop() : transcribing ? undefined : void start())}
+          label={recording ? "Tap to finish" : transcribing ? "Transcribing" : "Tap to speak"}
+        />
+        {error && <span className="pt-6 text-xs text-rose-300/90">{error}</span>}
       </div>
     </div>
   );

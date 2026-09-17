@@ -112,9 +112,14 @@ export function useVoiceCapture(onTranscript: (text: string) => void) {
 }
 
 let currentAudio: HTMLAudioElement | null = null;
+let playbackContext: AudioContext | null = null;
+let playbackFrame: number | null = null;
 
-/** Speaks text with the ElevenLabs voice via /api/tts. Resolves when playback ends. */
-export async function speak(text: string): Promise<void> {
+/**
+ * Speaks text with the ElevenLabs voice via /api/tts. Resolves when playback ends.
+ * `onLevel` receives the playback loudness (0..1) so the UI can animate with the voice.
+ */
+export async function speak(text: string, onLevel?: (level: number) => void): Promise<void> {
   stopSpeaking();
   const res = await fetch("/api/tts", {
     method: "POST",
@@ -124,17 +129,46 @@ export async function speak(text: string): Promise<void> {
   if (!res.ok) throw new Error("Voice playback unavailable");
   const url = URL.createObjectURL(await res.blob());
   const audio = new Audio(url);
+  audio.crossOrigin = "anonymous";
   currentAudio = audio;
+
+  if (onLevel) {
+    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (AudioCtx) {
+      const context = new AudioCtx();
+      playbackContext = context;
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      const source = context.createMediaElementSource(audio);
+      source.connect(analyser);
+      analyser.connect(context.destination);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const value of data) sum += (value - 128) ** 2;
+        onLevel(Math.min(1, Math.sqrt(sum / data.length) / 45));
+        playbackFrame = requestAnimationFrame(tick);
+      };
+      tick();
+    }
+  }
+
   await new Promise<void>((resolve) => {
     audio.onended = () => resolve();
     audio.onerror = () => resolve();
     void audio.play().catch(() => resolve());
   });
   URL.revokeObjectURL(url);
-  if (currentAudio === audio) currentAudio = null;
+  onLevel?.(0);
+  if (currentAudio === audio) stopSpeaking();
 }
 
 export function stopSpeaking() {
+  if (playbackFrame !== null) cancelAnimationFrame(playbackFrame);
+  playbackFrame = null;
+  void playbackContext?.close().catch(() => {});
+  playbackContext = null;
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;

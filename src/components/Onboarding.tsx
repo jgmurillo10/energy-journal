@@ -1,128 +1,198 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import VoiceField from "./VoiceField";
-import { speak, stopSpeaking } from "@/lib/speech";
+import { useCallback, useRef, useState } from "react";
+import Orb, { type OrbMode } from "./Orb";
+import { speak, stopSpeaking, useVoiceCapture } from "@/lib/speech";
 import type { Profile } from "@/lib/types";
 
 type StepKey = "name" | "gender" | "enjoys" | "firstDay";
 
-const STEPS: { key: StepKey; question: string; placeholder: string; rows: number }[] = [
-  { key: "name", question: "Hi! I'm your energy journal. What's your name?", placeholder: "My name is...", rows: 2 },
-  { key: "gender", question: "Nice to meet you. What gender do you identify with?", placeholder: "Woman, man, non-binary, prefer not to say...", rows: 2 },
-  { key: "enjoys", question: "What do you truly enjoy doing?", placeholder: "Things that light me up...", rows: 3 },
-  { key: "firstDay", question: "Last one: how was your day today?", placeholder: "Today I...", rows: 5 },
+const STEPS: { key: StepKey; question: string }[] = [
+  { key: "name", question: "Hi. I'm your energy journal. What's your name?" },
+  { key: "gender", question: "Nice to meet you. What gender do you identify with?" },
+  { key: "enjoys", question: "What do you truly enjoy doing?" },
+  { key: "firstDay", question: "Last one. How was your day today?" },
 ];
 
+type Phase = "intro" | "speaking" | "listening" | "thinking" | "saving";
+
 export default function Onboarding({ onDone }: { onDone: (profile: Profile) => void }) {
+  const [phase, setPhase] = useState<Phase>("intro");
   const [stepIndex, setStepIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<StepKey, string>>({ name: "", gender: "", enjoys: "", firstDay: "" });
-  const [voiceMode, setVoiceMode] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [speechLevel, setSpeechLevel] = useState(0);
+  const [heard, setHeard] = useState("");
+  const [typing, setTyping] = useState(false);
+  const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const answersRef = useRef<Record<StepKey, string>>({ name: "", gender: "", enjoys: "", firstDay: "" });
 
-  const step = STEPS[stepIndex];
-
-  useEffect(() => {
-    if (!voiceMode) return;
-    speak(step.question).catch(() => setError("Voice playback is unavailable — the questions are written below."));
-    return () => stopSpeaking();
-  }, [step.question, voiceMode]);
-
-  async function finish(final: Record<StepKey, string>) {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(final),
-      });
-      if (!res.ok) throw new Error("Could not save your profile");
-      const { profile } = (await res.json()) as { profile: Profile };
-      if (final.firstDay.trim()) {
-        await fetch("/api/entries", {
+  const save = useCallback(
+    async (answers: Record<StepKey, string>) => {
+      setPhase("saving");
+      try {
+        const res = await fetch("/api/profile", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: final.firstDay, source: voiceMode ? "voice" : "text" }),
+          body: JSON.stringify(answers),
         });
+        if (!res.ok) throw new Error("Could not save your profile");
+        const { profile } = (await res.json()) as { profile: Profile };
+        if (answers.firstDay.trim()) {
+          await fetch("/api/entries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: answers.firstDay, source: "voice" }),
+          });
+        }
+        onDone(profile);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Something went wrong");
+        setPhase("listening");
       }
-      stopSpeaking();
-      onDone(profile);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-      setSaving(false);
-    }
-  }
+    },
+    [onDone],
+  );
 
-  function next() {
-    if (step.key === "name" && !answers.name.trim()) {
-      setError("I need a name to call you by.");
+  const startRef = useRef<() => Promise<void>>(async () => {});
+
+  const ask = useCallback(
+    async (index: number) => {
+      setStepIndex(index);
+      setHeard("");
+      setDraft("");
+      setPhase("speaking");
+      try {
+        await speak(STEPS[index].question, setSpeechLevel);
+      } catch {
+        setError("Voice playback is unavailable — the question is written below.");
+      }
+      setSpeechLevel(0);
+      setPhase("listening");
+      await startRef.current();
+    },
+    [],
+  );
+
+  const commit = useCallback(
+    (index: number, value: string) => {
+      const key = STEPS[index].key;
+      answersRef.current = { ...answersRef.current, [key]: value };
+      setHeard(value);
+      if (index === STEPS.length - 1) void save(answersRef.current);
+      else setTimeout(() => void ask(index + 1), 700);
+    },
+    [ask, save],
+  );
+
+  const stepIndexRef = useRef(0);
+  stepIndexRef.current = stepIndex;
+
+  const { state: micState, error: micError, level: micLevel, start, stop } = useVoiceCapture((text) => {
+    commit(stepIndexRef.current, text);
+  });
+  startRef.current = start;
+
+  const mode: OrbMode =
+    phase === "speaking" ? "speaking" : micState === "recording" ? "listening" : phase === "thinking" || micState === "transcribing" || phase === "saving" ? "thinking" : "idle";
+  const level = phase === "speaking" ? speechLevel : micState === "recording" ? micLevel : 0;
+
+  const hint =
+    phase === "intro"
+      ? "Tap the orb to begin"
+      : phase === "speaking"
+        ? "Listen"
+        : micState === "recording"
+          ? "Tap to finish"
+          : micState === "transcribing"
+            ? "Transcribing"
+            : phase === "saving"
+              ? "Setting things up"
+              : "Tap to answer";
+
+  function handleOrbClick() {
+    setError(null);
+    if (phase === "intro") {
+      void ask(0);
       return;
     }
-    setError(null);
-    if (stepIndex === STEPS.length - 1) void finish(answers);
-    else setStepIndex((i) => i + 1);
+    if (phase === "speaking") {
+      stopSpeaking();
+      setSpeechLevel(0);
+      setPhase("listening");
+      return;
+    }
+    if (micState === "recording") {
+      stop();
+    } else if (micState === "idle" && phase === "listening") {
+      setTyping(false);
+      void start();
+    }
   }
 
   return (
-    <div className="mx-auto w-full max-w-xl">
-      <div className="mb-6 flex items-center gap-2">
-        {STEPS.map((s, i) => (
-          <div
-            key={s.key}
-            className={`h-1 flex-1 rounded-full transition ${i <= stepIndex ? "bg-emerald-400" : "bg-white/10"}`}
-          />
-        ))}
-      </div>
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden px-6">
+      <div className="pointer-events-none absolute inset-0 opacity-70 [background:radial-gradient(40rem_30rem_at_50%_35%,rgba(56,189,248,0.12),transparent_70%)]" />
 
-      <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/70">
-          Step {stepIndex + 1} of {STEPS.length}
+      <div className="relative flex w-full max-w-2xl flex-col items-center gap-14">
+        <p
+          key={stepIndex}
+          className="min-h-[4.5rem] animate-[fadeIn_600ms_ease-out] text-center text-2xl font-light leading-snug text-white/90 sm:text-3xl"
+        >
+          {phase === "intro" ? "Let's set up your energy journal." : STEPS[stepIndex].question}
         </p>
-        <h2 className="mt-3 text-2xl font-semibold text-white">{step.question}</h2>
-        <div className="mt-6">
-          <VoiceField
-            key={step.key}
-            value={answers[step.key]}
-            onChange={(value) => setAnswers((a) => ({ ...a, [step.key]: value }))}
-            placeholder={step.placeholder}
-            rows={step.rows}
-          />
-        </div>
 
-        {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+        <Orb mode={mode} level={level} onClick={handleOrbClick} label={hint} />
 
-        <div className="mt-6 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => {
-              stopSpeaking();
-              setVoiceMode((v) => !v);
-            }}
-            className="text-xs text-white/50 underline-offset-4 hover:text-white/80 hover:underline"
-          >
-            {voiceMode ? "Mute the voice guide" : "Unmute the voice guide"}
-          </button>
-          <div className="flex gap-2">
-            {stepIndex > 0 && (
+        <div className="mt-6 min-h-[5rem] w-full max-w-lg text-center">
+          {heard && !typing && <p className="text-base text-emerald-200/80">“{heard}”</p>}
+
+          {typing && (
+            <div className="space-y-3">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={3}
+                placeholder="Type your answer..."
+                className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 p-4 text-base text-white outline-none placeholder:text-white/25 focus:border-emerald-400/60"
+              />
               <button
                 type="button"
-                onClick={() => setStepIndex((i) => i - 1)}
-                className="rounded-full border border-white/15 px-4 py-2 text-sm text-white/70 hover:text-white"
+                onClick={() => {
+                  if (!draft.trim()) return;
+                  commit(stepIndex, draft.trim());
+                }}
+                className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-200"
               >
-                Back
+                Continue
               </button>
-            )}
+            </div>
+          )}
+
+          {(error ?? micError) && <p className="mt-3 text-sm text-rose-300">{error ?? micError}</p>}
+
+          {phase !== "intro" && phase !== "saving" && !typing && (
             <button
               type="button"
-              onClick={next}
-              disabled={saving}
-              className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-200 disabled:opacity-50"
+              onClick={() => {
+                stopSpeaking();
+                setTyping(true);
+              }}
+              className="mt-6 text-xs uppercase tracking-[0.2em] text-white/30 transition hover:text-white/70"
             >
-              {saving ? "Saving..." : stepIndex === STEPS.length - 1 ? "Start my journal" : "Next"}
+              Type instead
             </button>
-          </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          {STEPS.map((s, i) => (
+            <span
+              key={s.key}
+              className={`h-1.5 rounded-full transition-all duration-500 ${
+                i === stepIndex && phase !== "intro" ? "w-8 bg-emerald-300" : i < stepIndex ? "w-4 bg-emerald-300/40" : "w-4 bg-white/10"
+              }`}
+            />
+          ))}
         </div>
       </div>
     </div>
