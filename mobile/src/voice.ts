@@ -7,6 +7,9 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
+import { File } from 'expo-file-system';
+import { getLocales } from 'expo-localization';
+import { fetch } from 'expo/fetch';
 import { API_BASE, journalToken } from './api';
 
 export type RecorderState = 'idle' | 'starting' | 'recording' | 'transcribing';
@@ -72,9 +75,9 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs 
     setState('transcribing');
     try {
       const form = new FormData();
-      const name = uri.split('/').pop() ?? 'entry.m4a';
-      // React Native's FormData takes a file descriptor object rather than a Blob.
-      form.append('audio', { uri, name, type: 'audio/m4a' } as unknown as Blob);
+      // expo/fetch serialises an expo-file-system File; a plain {uri} object is rejected.
+      form.append('audio', new File(uri) as unknown as Blob);
+      form.append('language', getLocales()[0].languageCode ?? 'en');
       const res = await fetch(`${API_BASE}/api/stt`, {
         method: 'POST',
         headers: { 'x-journal-token': await journalToken() },

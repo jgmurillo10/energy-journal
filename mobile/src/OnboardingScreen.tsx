@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -137,6 +138,15 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
     else if (micState === 'idle') void start();
   }
 
+  function sendTyped() {
+    const text = draft.trim();
+    if (!text) return;
+    Keyboard.dismiss();
+    setTyping(false);
+    setDraft('');
+    commit(stepIndex, text);
+  }
+
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.kicker}>{firstName ? `Hey ${firstName}` : 'Energy journal'}</Text>
@@ -167,17 +177,21 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
                 placeholder="Type your answer"
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 style={styles.input}
-                multiline
+                autoFocus
+                returnKeyType="send"
+                onSubmitEditing={sendTyped}
               />
+              <Pressable onPress={sendTyped} style={styles.submit}>
+                <Text style={styles.submitText}>Send</Text>
+              </Pressable>
               <Pressable
                 onPress={() => {
-                  if (!draft.trim()) return;
+                  Keyboard.dismiss();
                   setTyping(false);
-                  commit(stepIndex, draft.trim());
+                  setDraft('');
                 }}
-                style={styles.submit}
               >
-                <Text style={styles.submitText}>Send</Text>
+                <Text style={styles.link}>Cancel</Text>
               </Pressable>
             </>
           ) : (
