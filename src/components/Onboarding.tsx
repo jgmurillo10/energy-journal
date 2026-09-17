@@ -8,11 +8,14 @@ import type { ExtractionMethod, Profile, ProfileField } from "@/lib/types";
 
 type StepKey = "name" | "gender" | "enjoys" | "firstDay";
 
-const STEPS: { key: StepKey; question: string }[] = [
-  { key: "name", question: "Hi. I'm your energy journal. What's your name?" },
-  { key: "gender", question: "Nice to meet you. What gender do you identify with?" },
-  { key: "enjoys", question: "What do you truly enjoy doing?" },
-  { key: "firstDay", question: "Last one. How was your day today?" },
+const STEPS: { key: StepKey; question: (name: string) => string }[] = [
+  { key: "name", question: () => "Hi. I'm your energy journal. What's your name?" },
+  {
+    key: "gender",
+    question: (name) => (name ? `Nice to meet you, ${name}. What gender do you identify with?` : "Nice to meet you. What gender do you identify with?"),
+  },
+  { key: "enjoys", question: (name) => (name ? `What do you truly enjoy doing, ${name}?` : "What do you truly enjoy doing?") },
+  { key: "firstDay", question: (name) => (name ? `Last one, ${name}. How was your day today?` : "Last one. How was your day today?") },
 ];
 
 type Phase = "intro" | "permission" | "speaking" | "listening" | "thinking" | "saving";
@@ -28,7 +31,9 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState("");
   const answersRef = useRef<Record<StepKey, string>>({ name: "", gender: "", enjoys: "", firstDay: "" });
+  const firstNameRef = useRef("");
 
   const save = useCallback(
     async (answers: Record<StepKey, string>) => {
@@ -75,7 +80,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
       setDraft("");
       setPhase("speaking");
       try {
-        await speak(STEPS[index].question, setSpeechLevel);
+        await speak(STEPS[index].question(firstNameRef.current), setSpeechLevel);
       } catch {
         setError("Voice playback is unavailable — the question is written below.");
       }
@@ -91,8 +96,20 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
       const key = STEPS[index].key;
       answersRef.current = { ...answersRef.current, [key]: value };
       setHeard(value);
-      if (index === STEPS.length - 1) void save(answersRef.current);
-      else setTimeout(() => void ask(index + 1), 700);
+      if (index === STEPS.length - 1) {
+        void save(answersRef.current);
+        return;
+      }
+      void (async () => {
+        if (key === "name") {
+          // Address the rest of the questions to them by name.
+          const { value: extracted } = await extractField("name", value);
+          const first = extracted.split(" ")[0] ?? "";
+          firstNameRef.current = first;
+          setFirstName(first);
+        }
+        setTimeout(() => void ask(index + 1), 700);
+      })();
     },
     [ask, save],
   );
@@ -174,7 +191,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
         >
           {phase === "intro" || phase === "permission"
             ? "Let's set up your energy journal."
-            : STEPS[stepIndex].question}
+            : STEPS[stepIndex].question(firstName)}
         </p>
 
         <Orb mode={mode} level={level} onClick={handleOrbClick} label={hint} />

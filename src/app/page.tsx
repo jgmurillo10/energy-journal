@@ -1,14 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import AccountBar from "@/components/AccountBar";
 import Composer from "@/components/Composer";
 import EnergyChart from "@/components/EnergyChart";
 import InsightsPanel from "@/components/InsightsPanel";
 import Onboarding from "@/components/Onboarding";
-import ProfilePanel from "@/components/ProfilePanel";
 import Timeline from "@/components/Timeline";
 import type { Insights } from "@/lib/insights";
+import { REDO_FLAG } from "@/lib/redo";
 import type { Entry, Profile } from "@/lib/types";
 
 const EMPTY_INSIGHTS: Insights = {
@@ -26,13 +26,6 @@ export default function Home() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [insights, setInsights] = useState<Insights>(EMPTY_INSIGHTS);
   const [flash, setFlash] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-
-  const reload = useCallback(async () => {
-    const res = await fetch("/api/profile");
-    const { profile: loaded } = (await res.json()) as { profile: Profile | null };
-    setProfile(loaded);
-  }, []);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/entries");
@@ -43,9 +36,11 @@ export default function Home() {
 
   useEffect(() => {
     (async () => {
+      const redo = sessionStorage.getItem(REDO_FLAG) === "1";
+      sessionStorage.removeItem(REDO_FLAG);
       const res = await fetch("/api/profile");
       const { profile: loaded } = (await res.json()) as { profile: Profile | null };
-      setProfile(loaded);
+      setProfile(redo ? null : loaded);
       if (loaded) await refresh();
       setLoading(false);
     })();
@@ -89,34 +84,17 @@ export default function Home() {
             <p className="mt-1 line-clamp-2 max-w-xl text-sm text-white/40">You told me you enjoy {profile.enjoys}</p>
           )}
         </div>
-        <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={() => setEditing((open) => !open)}
-            className="text-xs uppercase tracking-[0.2em] text-white/30 transition hover:text-white/70"
-          >
-            Edit details
-          </button>
-          <button
-            type="button"
-            onClick={() => setProfile(null)}
-            className="text-xs uppercase tracking-[0.2em] text-white/30 transition hover:text-white/70"
-          >
-            Redo setup
-          </button>
-        </div>
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          className="grid h-10 w-10 place-items-center rounded-full border border-white/10 text-white/40 transition hover:border-white/30 hover:text-white"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.6}>
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </Link>
       </header>
-
-      <AccountBar
-        onImported={async () => {
-          await reload();
-          await refresh();
-        }}
-      />
-
-      {editing && (
-        <ProfilePanel profile={profile} onSaved={setProfile} onClose={() => setEditing(false)} />
-      )}
 
       {flash && (
         <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
