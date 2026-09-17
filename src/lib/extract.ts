@@ -35,10 +35,10 @@ export function extractName(raw: string): string {
 }
 
 const GENDERS: { label: string; pattern: RegExp }[] = [
-  { label: "Non-binary", pattern: /\bnon[- ]?binary|enby|genderqueer\b/i },
-  { label: "Male", pattern: /\b(?:male|man|boy|guy|he|him|masculine)\b/i },
-  { label: "Female", pattern: /\b(?:female|woman|girl|she|her|feminine)\b/i },
-  { label: "Prefer not to say", pattern: /\b(?:rather not|prefer not|skip|none of|no comment)\b/i },
+  { label: "Non-binary", pattern: /\bnon[- ]?binary|no\s?binario|enby|genderqueer\b/i },
+  { label: "Male", pattern: /\b(?:male|man|boy|guy|he|him|masculine|hombre|masculino|chico)\b/i },
+  { label: "Female", pattern: /\b(?:female|woman|girl|she|her|feminine|mujer|femenino|chica)\b/i },
+  { label: "Prefer not to say", pattern: /\b(?:rather not|prefer not|skip|none of|no comment|prefiero no)\b/i },
 ];
 
 export function extractGender(raw: string): string {
@@ -49,7 +49,7 @@ export function extractGender(raw: string): string {
 }
 
 const ENJOYS_LEAD_IN =
-  /^(?:well,?\s+|so,?\s+|uh+,?\s+|um+,?\s+|i\s+(?:really\s+|truly\s+|absolutely\s+)?(?:enjoy|like|love|am into|really like)\s+(?:to\s+)?|i'?m\s+into\s+)/i;
+  /^(?:(?:well|so|uh+|um+|yeah|ok|okay)[,.]?\s+|i(?:'?m)?\s+(?:really\s+|truly\s+|absolutely\s+)?(?:enjoy|like|love|am into|into|really like)[,.]?\s+(?:to\s+|doing\s+)?|i\s+)/i;
 
 /** "I really enjoy playing football and also coding." -> "playing football and also coding" */
 export function extractEnjoys(raw: string): string {

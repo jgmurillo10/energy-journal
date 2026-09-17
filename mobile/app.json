@@ -31,7 +31,8 @@
           "microphonePermission": "Energy Journal listens so you can answer out loud."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-localization"
     ]
   }
 }

@@ -8,6 +8,7 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import { File } from 'expo-file-system';
+import { getLocales } from 'expo-localization';
 import { fetch } from 'expo/fetch';
 import { API_BASE, journalToken } from './api';
 
@@ -76,6 +77,7 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs 
       const form = new FormData();
       // expo/fetch serialises an expo-file-system File; a plain {uri} object is rejected.
       form.append('audio', new File(uri) as unknown as Blob);
+      form.append('language', getLocales()[0].languageCode ?? 'en');
       const res = await fetch(`${API_BASE}/api/stt`, {
         method: 'POST',
         headers: { 'x-journal-token': await journalToken() },
