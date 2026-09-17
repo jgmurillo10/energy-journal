@@ -7,6 +7,6 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const { id } = await context.params;
   const numericId = Number(id);
   if (!Number.isInteger(numericId)) return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  deleteEntry(numericId);
+  await deleteEntry(numericId);
   return NextResponse.json({ ok: true });
 }

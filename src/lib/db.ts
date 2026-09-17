@@ -1,99 +1,116 @@
-import Database from "better-sqlite3";
-import type { Entry, Mood, Profile, Trigger } from "./types";
-import fs from "node:fs";
+import { del, list, put } from "@vercel/blob";
+import fs from "node:fs/promises";
 import path from "node:path";
-
-const dataDir = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
-fs.mkdirSync(dataDir, { recursive: true });
-
-declare global {
-  var __energyJournalDb: Database.Database | undefined;
-}
-
-function init(): Database.Database {
-  const database = new Database(path.join(dataDir, "journal.db"));
-  database.pragma("journal_mode = WAL");
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS profile (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      name TEXT NOT NULL,
-      gender TEXT NOT NULL DEFAULT '',
-      enjoys TEXT NOT NULL DEFAULT '',
-      first_day TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS entries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      created_at TEXT NOT NULL,
-      text TEXT NOT NULL,
-      source TEXT NOT NULL DEFAULT 'text',
-      mood TEXT NOT NULL,
-      sentiment REAL NOT NULL DEFAULT 0,
-      energy INTEGER NOT NULL DEFAULT 50,
-      battery INTEGER NOT NULL DEFAULT 50,
-      triggers TEXT NOT NULL DEFAULT '[]'
-    );
-    CREATE INDEX IF NOT EXISTS idx_entries_created_at ON entries (created_at);
-  `);
-  return database;
-}
+import type { Entry, Mood, Profile, Trigger } from "./types";
 
 export type { Entry, Mood, Profile, Trigger };
 
-export const db = globalThis.__energyJournalDb ?? init();
-if (process.env.NODE_ENV !== "production") globalThis.__energyJournalDb = db;
+type LocalStore = { profile: Profile | null; entries: Entry[] };
 
-export type EntryRow = Omit<Entry, "triggers"> & { triggers: string };
+/**
+ * Journal storage. In production it lives in Vercel Blob, one immutable object per record:
+ * overwriting a blob path is only eventually consistent, so every write creates a new path and
+ * stale copies are deleted afterwards. Locally it falls back to a single JSON file.
+ */
+const useBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
-export function rowToEntry(row: EntryRow): Entry {
-  return { ...row, triggers: JSON.parse(row.triggers) as Trigger[] };
+/** Unguessable path segment so the public blob URLs cannot be discovered. */
+const root = `journal/${process.env.JOURNAL_BLOB_KEY ?? "local"}`;
+const profilePrefix = `${root}/profile/`;
+const entryPrefix = `${root}/entries/`;
+const localPath = path.join(process.env.DATA_DIR ?? path.join(process.cwd(), "data"), "journal.json");
+
+async function readLocal(): Promise<LocalStore> {
+  try {
+    return JSON.parse(await fs.readFile(localPath, "utf8")) as LocalStore;
+  } catch {
+    return { profile: null, entries: [] };
+  }
 }
 
-export function getProfile(): Profile | null {
-  const row = db.prepare("SELECT name, gender, enjoys, first_day, created_at FROM profile WHERE id = 1").get() as
-    | Profile
-    | undefined;
-  return row ?? null;
+async function writeLocal(store: LocalStore): Promise<void> {
+  await fs.mkdir(path.dirname(localPath), { recursive: true });
+  await fs.writeFile(localPath, JSON.stringify(store));
 }
 
-export function saveProfile(p: Omit<Profile, "created_at">): Profile {
-  const created_at = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO profile (id, name, gender, enjoys, first_day, created_at)
-     VALUES (1, @name, @gender, @enjoys, @first_day, @created_at)
-     ON CONFLICT(id) DO UPDATE SET name = @name, gender = @gender, enjoys = @enjoys, first_day = @first_day`,
-  ).run({ ...p, created_at });
-  return getProfile()!;
+type BlobRef = { pathname: string; url: string; uploadedAt: Date };
+
+async function listBlobs(prefix: string): Promise<BlobRef[]> {
+  const { blobs } = await list({ prefix, limit: 1000 });
+  return blobs;
 }
 
-export function listEntries(limit = 200): Entry[] {
-  const rows = db
-    .prepare("SELECT * FROM entries ORDER BY datetime(created_at) DESC LIMIT ?")
-    .all(limit) as EntryRow[];
-  return rows.map(rowToEntry);
+async function fetchJson<T>(url: string): Promise<T | null> {
+  const res = await fetch(url, { cache: "no-store" });
+  return res.ok ? ((await res.json()) as T) : null;
 }
 
-export function insertEntry(entry: Omit<Entry, "id" | "created_at"> & { created_at?: string }): Entry {
-  const created_at = entry.created_at ?? new Date().toISOString();
-  const info = db
-    .prepare(
-      `INSERT INTO entries (created_at, text, source, mood, sentiment, energy, battery, triggers)
-       VALUES (@created_at, @text, @source, @mood, @sentiment, @energy, @battery, @triggers)`,
-    )
-    .run({
-      created_at,
-      text: entry.text,
-      source: entry.source,
-      mood: entry.mood,
-      sentiment: entry.sentiment,
-      energy: entry.energy,
-      battery: entry.battery,
-      triggers: JSON.stringify(entry.triggers),
-    });
-  const row = db.prepare("SELECT * FROM entries WHERE id = ?").get(info.lastInsertRowid) as EntryRow;
-  return rowToEntry(row);
+async function putJson(pathname: string, value: unknown): Promise<void> {
+  await put(pathname, JSON.stringify(value), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: false,
+    cacheControlMaxAge: 0,
+  });
 }
 
-export function deleteEntry(id: number): void {
-  db.prepare("DELETE FROM entries WHERE id = ?").run(id);
+export async function getProfile(): Promise<Profile | null> {
+  if (!useBlob) return (await readLocal()).profile;
+  const blobs = await listBlobs(profilePrefix);
+  if (!blobs.length) return null;
+  const newest = blobs.reduce((a, b) => (b.uploadedAt > a.uploadedAt ? b : a));
+  return fetchJson<Profile>(newest.url);
+}
+
+export async function saveProfile(p: Omit<Profile, "created_at">): Promise<Profile> {
+  const existing = await getProfile();
+  const profile: Profile = { ...p, created_at: existing?.created_at ?? new Date().toISOString() };
+  if (!useBlob) {
+    const store = await readLocal();
+    await writeLocal({ ...store, profile });
+    return profile;
+  }
+  const stale = await listBlobs(profilePrefix);
+  await putJson(`${profilePrefix}${Date.now()}.json`, profile);
+  if (stale.length) await del(stale.map((b) => b.url));
+  return profile;
+}
+
+export async function listEntries(limit = 200): Promise<Entry[]> {
+  const entries = useBlob
+    ? (
+        await Promise.all((await listBlobs(entryPrefix)).map((b) => fetchJson<Entry>(b.url)))
+      ).filter((e): e is Entry => e !== null)
+    : (await readLocal()).entries;
+  return entries
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
+
+/** Time-ordered id that stays unique across concurrent serverless invocations. */
+function newId(): number {
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+}
+
+export async function insertEntry(
+  entry: Omit<Entry, "id" | "created_at"> & { created_at?: string },
+): Promise<Entry> {
+  const created: Entry = { ...entry, id: newId(), created_at: entry.created_at ?? new Date().toISOString() };
+  if (!useBlob) {
+    const store = await readLocal();
+    await writeLocal({ ...store, entries: [...store.entries, created] });
+    return created;
+  }
+  await putJson(`${entryPrefix}${created.id}.json`, created);
+  return created;
+}
+
+export async function deleteEntry(id: number): Promise<void> {
+  if (!useBlob) {
+    const store = await readLocal();
+    await writeLocal({ ...store, entries: store.entries.filter((e) => e.id !== id) });
+    return;
+  }
+  const target = (await listBlobs(entryPrefix)).find((b) => b.pathname === `${entryPrefix}${id}.json`);
+  if (target) await del(target.url);
 }

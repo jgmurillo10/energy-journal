@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const MOODS: Mood[] = ["good", "neutral", "bad"];
 
 export async function GET() {
-  const entries = listEntries();
+  const entries = await listEntries();
   return NextResponse.json({ entries, insights: buildInsights(entries) });
 }
 
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   const reportedEnergy = typeof body.energy === "number" ? Math.max(0, Math.min(100, body.energy)) : undefined;
   const analysis = await analyze(text, reportedMood, reportedEnergy);
 
-  const entry = insertEntry({
+  const entry = await insertEntry({
     text,
     source: body.source === "voice" ? "voice" : "text",
     mood: analysis.mood,
