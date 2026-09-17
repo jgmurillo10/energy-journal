@@ -17,6 +17,11 @@ export async function POST(request: Request) {
     gender: extractGender(body.gender ?? ""),
     enjoys: extractEnjoys(body.enjoys ?? ""),
     first_day: body.firstDay?.trim() ?? "",
+    raw: {
+      name: body.name?.trim() ?? "",
+      gender: body.gender?.trim() ?? "",
+      enjoys: body.enjoys?.trim() ?? "",
+    },
   });
   return NextResponse.json({ profile });
 }

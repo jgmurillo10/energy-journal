@@ -7,12 +7,20 @@ export type Trigger = {
   evidence: string;
 };
 
+/** What was actually said, kept next to the cleaned value shown in the UI. */
+export type RawAnswers = {
+  name: string;
+  gender: string;
+  enjoys: string;
+};
+
 export type Profile = {
   name: string;
   gender: string;
   enjoys: string;
   first_day: string;
   created_at: string;
+  raw?: RawAnswers;
 };
 
 export type Entry = {
