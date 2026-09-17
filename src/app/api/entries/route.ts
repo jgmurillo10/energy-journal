@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { analyze } from "@/lib/analyze";
 import { insertEntry, listEntries, type Mood } from "@/lib/db";
 import { buildInsights } from "@/lib/insights";
+import { currentOwner } from "@/lib/owner";
 
 export const dynamic = "force-dynamic";
 
 const MOODS: Mood[] = ["good", "neutral", "bad"];
 
 export async function GET() {
-  const entries = await listEntries();
+  const { key } = await currentOwner();
+  const entries = await listEntries(key);
   return NextResponse.json({ entries, insights: buildInsights(entries) });
 }
 
@@ -26,7 +28,8 @@ export async function POST(request: Request) {
   const reportedEnergy = typeof body.energy === "number" ? Math.max(0, Math.min(100, body.energy)) : undefined;
   const analysis = await analyze(text, reportedMood, reportedEnergy);
 
-  const entry = await insertEntry({
+  const { key } = await currentOwner();
+  const entry = await insertEntry(key, {
     text,
     source: body.source === "voice" ? "voice" : "text",
     mood: analysis.mood,

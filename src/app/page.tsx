@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import AccountBar from "@/components/AccountBar";
 import Composer from "@/components/Composer";
 import EnergyChart from "@/components/EnergyChart";
 import InsightsPanel from "@/components/InsightsPanel";
@@ -26,6 +27,12 @@ export default function Home() {
   const [insights, setInsights] = useState<Insights>(EMPTY_INSIGHTS);
   const [flash, setFlash] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+
+  const reload = useCallback(async () => {
+    const res = await fetch("/api/profile");
+    const { profile: loaded } = (await res.json()) as { profile: Profile | null };
+    setProfile(loaded);
+  }, []);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/entries");
@@ -99,6 +106,13 @@ export default function Home() {
           </button>
         </div>
       </header>
+
+      <AccountBar
+        onImported={async () => {
+          await reload();
+          await refresh();
+        }}
+      />
 
       {editing && (
         <ProfilePanel profile={profile} onSaved={setProfile} onClose={() => setEditing(false)} />

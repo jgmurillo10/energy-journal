@@ -28,7 +28,8 @@ export default function VoiceField({ value, onChange, placeholder, rows = 3 }: P
         placeholder={transcribing ? "Transcribing with ElevenLabs..." : placeholder}
         className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 p-4 text-base text-white outline-none transition placeholder:text-white/30 focus:border-emerald-400/60"
       />
-      <div className="flex flex-col items-center gap-2 pt-2">
+      {/* pb leaves room for the orb's absolutely positioned label. */}
+      <div className="flex flex-col items-center gap-2 pt-2 pb-8">
         <Orb
           size="sm"
           mode={recording ? "listening" : transcribing ? "thinking" : "idle"}

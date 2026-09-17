@@ -11,6 +11,19 @@ export default function EnergyChart({ entries }: { entries: Entry[] }) {
     return <p className="text-sm text-white/40">Your energy curve appears once you log your first entry.</p>;
   }
 
+  // A single dot reads as a glitch; say what's missing instead of drawing a curve of one.
+  if (points.length === 1) {
+    const only = points[0];
+    return (
+      <div className="flex h-40 flex-col items-center justify-center gap-2 text-center">
+        <span className="text-3xl font-semibold text-emerald-300">{only.battery}%</span>
+        <p className="text-sm text-white/40">
+          One entry so far — log a couple more and I&apos;ll chart how your battery moves.
+        </p>
+      </div>
+    );
+  }
+
   const step = points.length > 1 ? WIDTH / (points.length - 1) : 0;
   const coords = points.map((entry, i) => ({
     x: points.length > 1 ? i * step : WIDTH / 2,

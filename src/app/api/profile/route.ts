@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProfile, recordAudit, saveProfile } from "@/lib/db";
 import { extractEnjoys, extractGender, extractName } from "@/lib/extract";
+import { currentOwner } from "@/lib/owner";
 import type { ExtractionMethod, Profile, ProfileField, RawAnswers } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -28,12 +29,14 @@ function isMethod(value: unknown): value is ExtractionMethod {
 }
 
 export async function GET() {
-  return NextResponse.json({ profile: await getProfile() });
+  const { key, account } = await currentOwner();
+  return NextResponse.json({ profile: await getProfile(key), account });
 }
 
 export async function POST(request: Request) {
   const body = (await request.json()) as Body;
-  const existing = await getProfile();
+  const { key } = await currentOwner();
+  const existing = await getProfile(key);
 
   const raw = {} as RawAnswers;
   const values = {} as Record<ProfileField, string>;
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
 
   if (!values.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
-  const profile: Profile = await saveProfile({
+  const profile: Profile = await saveProfile(key, {
     ...values,
     first_day: body.firstDay?.trim() ?? "",
     raw,
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
 
   await Promise.all(
     FIELDS.filter((field) => (existing?.[field] ?? "") !== profile[field]).map((field) =>
-      recordAudit({
+      recordAudit(key, {
         field,
         before: existing?.[field] ?? "",
         after: profile[field],
@@ -74,7 +77,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const body = (await request.json()) as Partial<Record<ProfileField, string>>;
-  const existing = await getProfile();
+  const { key } = await currentOwner();
+  const existing = await getProfile(key);
   if (!existing) return NextResponse.json({ error: "no profile yet" }, { status: 404 });
 
   const edits = FIELDS.filter((field) => typeof body[field] === "string").map((field) => ({
@@ -92,13 +96,13 @@ export async function PATCH(request: Request) {
     methods[field] = "user";
   }
 
-  const profile = await saveProfile({ ...next, methods });
+  const profile = await saveProfile(key, { ...next, methods });
 
   await Promise.all(
     edits
       .filter(({ field, value }) => existing[field] !== value)
       .map(({ field, value }) =>
-        recordAudit({ field, before: existing[field], after: value, method: "user" }),
+        recordAudit(key, { field, before: existing[field], after: value, method: "user" }),
       ),
   );
 

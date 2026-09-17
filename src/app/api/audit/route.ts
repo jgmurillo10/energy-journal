@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { listAudit } from "@/lib/db";
+import { currentOwner } from "@/lib/owner";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ audit: await listAudit() });
+  const { key } = await currentOwner();
+  return NextResponse.json({ audit: await listAudit(key) });
 }
