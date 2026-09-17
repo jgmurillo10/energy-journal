@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import Orb, { type OrbMode } from "./Orb";
-import { speak, stopSpeaking, useVoiceCapture } from "@/lib/speech";
+import { speak, stopSpeaking, unlockAudio, useVoiceCapture } from "@/lib/speech";
 import { extractField } from "@/lib/localLlm";
 import type { ExtractionMethod, Profile, ProfileField } from "@/lib/types";
 
@@ -153,6 +153,8 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
 
   function handleOrbClick() {
     setError(null);
+    // Must happen inside the tap: iOS only lets audio start from a gesture.
+    void unlockAudio();
     if (phase === "intro") {
       setPhase("permission");
       void requestPermission().then((granted) => {
@@ -235,6 +237,10 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
           )}
 
           {(error ?? micError) && <p className="mt-3 text-sm text-rose-300">{error ?? micError}</p>}
+
+          {phase === "speaking" && (
+            <p className="mt-3 text-xs text-white/25">Can&apos;t hear me? Turn off silent mode and check the volume.</p>
+          )}
 
           {phase !== "intro" && phase !== "permission" && phase !== "saving" && !typing && (
             <button

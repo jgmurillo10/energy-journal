@@ -164,8 +164,47 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
 }
 
 let currentAudio: HTMLAudioElement | null = null;
+let currentSource: AudioBufferSourceNode | null = null;
 let playbackContext: AudioContext | null = null;
 let playbackFrame: number | null = null;
+
+function audioContextClass(): typeof AudioContext | undefined {
+  return (
+    window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  );
+}
+
+/**
+ * iOS starts every audio context suspended and only resumes it inside a real tap, so the first
+ * tap has to open it — otherwise the questions fetch fine and play into silence. Web Audio also
+ * keeps playing when the ringer switch is off, which an <audio> element does not.
+ */
+export async function unlockAudio(): Promise<void> {
+  const AudioCtx = audioContextClass();
+  if (!AudioCtx) return;
+  if (!playbackContext || playbackContext.state === "closed") playbackContext = new AudioCtx();
+  try {
+    await playbackContext.resume();
+    const source = playbackContext.createBufferSource();
+    source.buffer = playbackContext.createBuffer(1, 1, 22050);
+    source.connect(playbackContext.destination);
+    source.start(0);
+  } catch {
+    // playback falls back to an <audio> element
+  }
+}
+
+function meter(context: AudioContext, analyser: AnalyserNode, onLevel: (level: number) => void) {
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  const tick = () => {
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (const value of data) sum += (value - 128) ** 2;
+    onLevel(Math.min(1, Math.sqrt(sum / data.length) / 45));
+    playbackFrame = requestAnimationFrame(tick);
+  };
+  tick();
+}
 
 /**
  * Speaks text with the ElevenLabs voice via /api/tts. Resolves when playback ends.
@@ -179,33 +218,36 @@ export async function speak(text: string, onLevel?: (level: number) => void): Pr
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error("Voice playback unavailable");
-  const url = URL.createObjectURL(await res.blob());
-  const audio = new Audio(url);
-  audio.crossOrigin = "anonymous";
-  currentAudio = audio;
+  const bytes = await res.arrayBuffer();
 
-  if (onLevel) {
-    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (AudioCtx) {
-      const context = new AudioCtx();
-      playbackContext = context;
+  const context = playbackContext;
+  if (context && context.state !== "closed") {
+    try {
+      await context.resume();
+      const buffer = await context.decodeAudioData(bytes.slice(0));
+      const source = context.createBufferSource();
+      source.buffer = buffer;
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
-      const source = context.createMediaElementSource(audio);
       source.connect(analyser);
       analyser.connect(context.destination);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (const value of data) sum += (value - 128) ** 2;
-        onLevel(Math.min(1, Math.sqrt(sum / data.length) / 45));
-        playbackFrame = requestAnimationFrame(tick);
-      };
-      tick();
+      currentSource = source;
+      if (onLevel) meter(context, analyser, onLevel);
+      await new Promise<void>((resolve) => {
+        source.onended = () => resolve();
+        source.start(0);
+      });
+      onLevel?.(0);
+      if (currentSource === source) stopSpeaking();
+      return;
+    } catch {
+      // fall back to an audio element below
     }
   }
 
+  const url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+  const audio = new Audio(url);
+  currentAudio = audio;
   await new Promise<void>((resolve) => {
     audio.onended = () => resolve();
     audio.onerror = () => resolve();
@@ -219,8 +261,15 @@ export async function speak(text: string, onLevel?: (level: number) => void): Pr
 export function stopSpeaking() {
   if (playbackFrame !== null) cancelAnimationFrame(playbackFrame);
   playbackFrame = null;
-  void playbackContext?.close().catch(() => {});
-  playbackContext = null;
+  if (currentSource) {
+    try {
+      currentSource.onended = null;
+      currentSource.stop();
+    } catch {
+      // already finished
+    }
+    currentSource = null;
+  }
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
