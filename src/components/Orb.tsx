@@ -20,7 +20,7 @@ type Props = {
 export default function Orb({ mode, level, onClick, label, size = "lg" }: Props) {
   const palette = PALETTE[mode];
   const amplitude = Math.min(1, level);
-  const scale = 1 + amplitude * 0.22;
+  const scale = (mode === "listening" ? 1.18 : 1) + amplitude * 0.22;
   const interactive = Boolean(onClick);
 
   return (
@@ -41,6 +41,7 @@ export default function Orb({ mode, level, onClick, label, size = "lg" }: Props)
         className="orb-core"
         style={{
           transform: `scale(${scale})`,
+          transition: "transform 180ms ease-out, box-shadow 180ms ease-out",
           background: `radial-gradient(circle at 32% 28%, #ffffff 0%, ${palette.from} 28%, ${palette.to} 72%, #0b1120 100%)`,
           boxShadow: `0 0 ${60 + amplitude * 90}px ${10 + amplitude * 30}px ${palette.glow}`,
         }}

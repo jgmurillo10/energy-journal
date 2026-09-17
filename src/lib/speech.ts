@@ -10,8 +10,13 @@ function pickMimeType(): string | undefined {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type));
 }
 
-/** Records microphone audio and transcribes it with ElevenLabs Scribe via /api/stt. */
-export function useVoiceCapture(onTranscript: (text: string) => void) {
+const SILENCE_LEVEL = 0.06;
+
+/**
+ * Records microphone audio and transcribes it with ElevenLabs Scribe via /api/stt.
+ * When `silenceMs` is set, the recording stops itself after that much quiet following speech.
+ */
+export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?: number) {
   const [state, setState] = useState<RecorderState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
@@ -22,6 +27,11 @@ export function useVoiceCapture(onTranscript: (text: string) => void) {
   const frameRef = useRef<number | null>(null);
   const callbackRef = useRef(onTranscript);
   callbackRef.current = onTranscript;
+  const cancelledRef = useRef(false);
+  const spokeRef = useRef(false);
+  const quietSinceRef = useRef<number | null>(null);
+  const silenceRef = useRef(silenceMs);
+  silenceRef.current = silenceMs;
 
   const cleanup = useCallback(() => {
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
@@ -34,6 +44,10 @@ export function useVoiceCapture(onTranscript: (text: string) => void) {
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
+
+  const stopRecorder = useCallback(() => {
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+  }, []);
 
   const monitorLevel = useCallback((stream: MediaStream) => {
     const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -48,11 +62,24 @@ export function useVoiceCapture(onTranscript: (text: string) => void) {
       analyser.getByteTimeDomainData(data);
       let sum = 0;
       for (const value of data) sum += (value - 128) ** 2;
-      setLevel(Math.min(1, Math.sqrt(sum / data.length) / 40));
+      const next = Math.min(1, Math.sqrt(sum / data.length) / 40);
+      setLevel(next);
+      if (silenceRef.current) {
+        if (next > SILENCE_LEVEL) {
+          spokeRef.current = true;
+          quietSinceRef.current = null;
+        } else if (spokeRef.current) {
+          quietSinceRef.current ??= performance.now();
+          if (performance.now() - quietSinceRef.current > silenceRef.current) {
+            stopRecorder();
+            return;
+          }
+        }
+      }
       frameRef.current = requestAnimationFrame(tick);
     };
     tick();
-  }, []);
+  }, [stopRecorder]);
 
   const transcribe = useCallback(async (blob: Blob) => {
     setState("transcribing");
@@ -77,6 +104,9 @@ export function useVoiceCapture(onTranscript: (text: string) => void) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      cancelledRef.current = false;
+      spokeRef.current = false;
+      quietSinceRef.current = null;
       monitorLevel(stream);
       const mimeType = pickMimeType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
@@ -87,8 +117,8 @@ export function useVoiceCapture(onTranscript: (text: string) => void) {
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         cleanup();
-        if (blob.size > 0) void transcribe(blob);
-        else setState("idle");
+        if (cancelledRef.current || blob.size === 0) setState("idle");
+        else void transcribe(blob);
       };
       recorderRef.current = recorder;
       recorder.start();
@@ -105,10 +135,15 @@ export function useVoiceCapture(onTranscript: (text: string) => void) {
   }, [cleanup, monitorLevel, transcribe]);
 
   const stop = useCallback(() => {
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-  }, []);
+    stopRecorder();
+  }, [stopRecorder]);
 
-  return { state, error, level, start, stop, setError };
+  const cancel = useCallback(() => {
+    cancelledRef.current = true;
+    stopRecorder();
+  }, [stopRecorder]);
+
+  return { state, error, level, start, stop, cancel, setError };
 }
 
 let currentAudio: HTMLAudioElement | null = null;

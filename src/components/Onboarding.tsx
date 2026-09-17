@@ -16,6 +16,9 @@ const STEPS: { key: StepKey; question: string }[] = [
 
 type Phase = "intro" | "speaking" | "listening" | "thinking" | "saving";
 
+/** Quiet time after speech that auto-submits the answer. */
+const SILENCE_MS = 2500;
+
 export default function Onboarding({ onDone }: { onDone: (profile: Profile) => void }) {
   const [phase, setPhase] = useState<Phase>("intro");
   const [stepIndex, setStepIndex] = useState(0);
@@ -87,9 +90,16 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
   const stepIndexRef = useRef(0);
   stepIndexRef.current = stepIndex;
 
-  const { state: micState, error: micError, level: micLevel, start, stop } = useVoiceCapture((text) => {
+  const {
+    state: micState,
+    error: micError,
+    level: micLevel,
+    start,
+    stop,
+    cancel,
+  } = useVoiceCapture((text) => {
     commit(stepIndexRef.current, text);
-  });
+  }, SILENCE_MS);
   startRef.current = start;
 
   const mode: OrbMode =
@@ -102,7 +112,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
       : phase === "speaking"
         ? "Listen"
         : micState === "recording"
-          ? "Tap to finish"
+          ? "Tap when you're done — or just pause"
           : micState === "transcribing"
             ? "Transcribing"
             : phase === "saving"
@@ -142,6 +152,19 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
         </p>
 
         <Orb mode={mode} level={level} onClick={handleOrbClick} label={hint} />
+
+        {micState === "recording" && (
+          <button
+            type="button"
+            onClick={cancel}
+            aria-label="Cancel answer"
+            className="-mt-6 grid h-10 w-10 place-items-center rounded-full border border-rose-400/70 text-rose-300 transition hover:bg-rose-500/20 hover:text-rose-100"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        )}
 
         <div className="mt-6 min-h-[5rem] w-full max-w-lg text-center">
           {heard && !typing && <p className="text-base text-emerald-200/80">“{heard}”</p>}

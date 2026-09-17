@@ -11,8 +11,9 @@ type Props = {
 };
 
 export default function VoiceField({ value, onChange, placeholder, rows = 3 }: Props) {
-  const { state, error, level, start, stop } = useVoiceCapture((text) =>
-    onChange(value.trim() ? `${value.trim()} ${text}` : text),
+  const { state, error, level, start, stop, cancel } = useVoiceCapture(
+    (text) => onChange(value.trim() ? `${value.trim()} ${text}` : text),
+    3000,
   );
   const recording = state === "recording";
   const transcribing = state === "transcribing";
@@ -32,8 +33,20 @@ export default function VoiceField({ value, onChange, placeholder, rows = 3 }: P
           mode={recording ? "listening" : transcribing ? "thinking" : "idle"}
           level={level}
           onClick={() => (recording ? stop() : transcribing ? undefined : void start())}
-          label={recording ? "Tap to finish" : transcribing ? "Transcribing" : "Tap to speak"}
+          label={recording ? "Tap when done — or pause" : transcribing ? "Transcribing" : "Tap to speak"}
         />
+        {recording && (
+          <button
+            type="button"
+            onClick={cancel}
+            aria-label="Cancel recording"
+            className="mt-5 grid h-8 w-8 place-items-center rounded-full border border-rose-400/70 text-rose-300 transition hover:bg-rose-500/20 hover:text-rose-100"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        )}
         {error && <span className="pt-6 text-xs text-rose-300/90">{error}</span>}
       </div>
     </div>
