@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 export const API_BASE = 'https://energy-journal-rosy.vercel.app';
@@ -15,7 +16,6 @@ export type Trigger = {
 
 export type Profile = {
   name: string;
-  gender: string;
   enjoys: string;
   first_day: string;
   created_at: string;
@@ -46,26 +46,38 @@ export type Insights = {
 
 let token: string | null = null;
 
+/** SecureStore is keychain-only; the web build of the same app falls back to localStorage. */
+const store = {
+  get: (key: string): Promise<string | null> =>
+    Platform.OS === 'web'
+      ? Promise.resolve(globalThis.localStorage?.getItem(key) ?? null)
+      : SecureStore.getItemAsync(key),
+  set: (key: string, value: string): Promise<void> =>
+    Platform.OS === 'web'
+      ? Promise.resolve(globalThis.localStorage?.setItem(key, value))
+      : SecureStore.setItemAsync(key, value),
+};
+
 /**
  * The phone has no cookie jar, so it holds the same signed journal token the web app keeps in a
  * cookie and sends it on every request. Minted once on first launch and kept in the keychain.
  */
 export async function journalToken(): Promise<string> {
   if (token) return token;
-  const stored = await SecureStore.getItemAsync(TOKEN_KEY);
+  const stored = await store.get(TOKEN_KEY);
   if (stored) {
     token = stored;
     return stored;
   }
   const res = await fetch(`${API_BASE}/api/journal/token`, { method: 'POST' });
   const { token: minted } = (await res.json()) as { token: string };
-  await SecureStore.setItemAsync(TOKEN_KEY, minted);
+  await store.set(TOKEN_KEY, minted);
   token = minted;
   return minted;
 }
 
 export async function setJournalToken(value: string): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_KEY, value);
+  await store.set(TOKEN_KEY, value);
   token = value;
 }
 
@@ -90,7 +102,20 @@ export function saveProfile(body: Record<string, unknown>) {
   });
 }
 
-export function updateProfile(fields: Partial<Pick<Profile, 'name' | 'gender' | 'enjoys'>>) {
+export type OnboardingStep = 'name' | 'enjoys' | 'firstDay';
+export type OnboardingTurn = {
+  reply: string;
+  value: string;
+  method: 'local-llm' | 'cloud-llm' | 'rules' | 'user';
+  skipped: boolean;
+};
+
+/** The model reacts to an onboarding answer and pulls the value out of it. */
+export function onboardingTurn(body: { step: OnboardingStep; answer: string; name: string; nextQuestion: string }) {
+  return request<OnboardingTurn>('/api/onboarding', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateProfile(fields: Partial<Pick<Profile, 'name' | 'enjoys'>>) {
   return request<{ profile: Profile }>('/api/profile', {
     method: 'PATCH',
     body: JSON.stringify(fields),

@@ -42,7 +42,7 @@ export default function VoiceField({ value, onChange, placeholder, rows = 3 }: P
                 ? "Getting the mic ready"
                 : transcribing
                   ? "Transcribing"
-                  : "Tap to speak"
+                  : "Tap to check in"
           }
         />
         {recording && (

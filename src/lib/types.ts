@@ -7,17 +7,17 @@ export type Trigger = {
   evidence: string;
 };
 
-export type ProfileField = "name" | "gender" | "enjoys";
+export type ProfileField = "name" | "enjoys";
 
 /** How a stored value was produced from the transcript. */
-export type ExtractionMethod = "local-llm" | "rules" | "user";
+export type ExtractionMethod = "local-llm" | "cloud-llm" | "rules" | "user";
 
 /** What was actually said, kept next to the cleaned value shown in the UI. */
 export type RawAnswers = Record<ProfileField, string>;
 
 export type Profile = {
+  /** Empty when the person skipped the question. */
   name: string;
-  gender: string;
   enjoys: string;
   first_day: string;
   created_at: string;
@@ -28,7 +28,7 @@ export type Profile = {
 export type AuditEvent = {
   id: number;
   at: string;
-  field: ProfileField | "profile";
+  field: ProfileField | "gender" | "profile";
   before: string;
   after: string;
   method: ExtractionMethod;

@@ -5,15 +5,23 @@ import type { AuditEvent, ExtractionMethod, Profile, ProfileField } from "@/lib/
 
 const FIELDS: { key: ProfileField; label: string }[] = [
   { key: "name", label: "Name" },
-  { key: "gender", label: "Gender" },
   { key: "enjoys", label: "Enjoys" },
 ];
 
+const SHOW_METHOD = process.env.NODE_ENV === "development";
+
 const METHOD_LABEL: Record<ExtractionMethod, string> = {
   "local-llm": "on-device model",
+  "cloud-llm": "cloud model",
   rules: "rules",
   user: "edited by you",
 };
+
+/** People only need to know whether they typed it themselves or it came from what they said. */
+function sourceLabel(method: ExtractionMethod | undefined): string {
+  if (SHOW_METHOD) return METHOD_LABEL[method ?? "rules"];
+  return method === "user" ? "edited by you" : "from what you said";
+}
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -30,7 +38,6 @@ export default function ProfilePanel({
 }) {
   const [draft, setDraft] = useState<Record<ProfileField, string>>({
     name: profile.name,
-    gender: profile.gender,
     enjoys: profile.enjoys,
   });
   const [audit, setAudit] = useState<AuditEvent[]>([]);
@@ -77,18 +84,20 @@ export default function ProfilePanel({
         </button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         {FIELDS.map(({ key, label }) => (
           <label key={key} className="block text-sm">
             <span className="text-white/50">{label}</span>
             <input
               value={draft[key]}
+              placeholder={key === "name" ? "Skipped — add one if you like" : "Skipped"}
               onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
               className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-emerald-400/60"
             />
             <span className="mt-1 block text-xs text-white/30">
-              From {METHOD_LABEL[profile.methods?.[key] ?? "rules"]}
-              {profile.raw?.[key] ? ` · you said “${profile.raw[key]}”` : ""}
+              {profile.raw?.[key] || profile.methods?.[key] === "user"
+                ? `${sourceLabel(profile.methods?.[key])}${profile.raw?.[key] ? ` · you said “${profile.raw[key]}”` : ""}`
+                : "Not provided"}
             </span>
           </label>
         ))}
@@ -115,11 +124,11 @@ export default function ProfilePanel({
               <div className="flex flex-wrap items-baseline gap-2">
                 <span className="font-medium text-white/80 capitalize">{event.field}</span>
                 <span className="text-white/30">{formatTime(event.at)}</span>
-                <span className="text-white/30">· {METHOD_LABEL[event.method]}</span>
+                <span className="text-white/30">· {sourceLabel(event.method)}</span>
               </div>
               <p className="mt-1 text-white/60">
                 {event.before ? <span className="line-through text-white/30">{event.before}</span> : "—"}{" "}
-                → <span className="text-emerald-200/80">{event.after}</span>
+                → <span className="text-emerald-200/80">{event.after || "—"}</span>
               </p>
               {event.transcript && <p className="mt-1 text-xs text-white/30">Transcript: “{event.transcript}”</p>}
             </li>

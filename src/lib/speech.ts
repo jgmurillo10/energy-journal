@@ -90,6 +90,7 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs?
       const form = new FormData();
       const extension = blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm";
       form.append("audio", blob, `entry.${extension}`);
+      form.append("language", navigator.language);
       const res = await fetch("/api/stt", { method: "POST", body: form });
       const data = (await res.json()) as { text?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Transcription failed");

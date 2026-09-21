@@ -16,7 +16,6 @@ export default function SettingsScreen({
   onSwitchedJournal: () => void;
 }) {
   const [name, setName] = useState(profile.name);
-  const [gender, setGender] = useState(profile.gender);
   const [enjoys, setEnjoys] = useState(profile.enjoys);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +25,7 @@ export default function SettingsScreen({
   async function save() {
     setError(null);
     try {
-      const { profile: saved } = await updateProfile({ name, gender, enjoys });
+      const { profile: saved } = await updateProfile({ name, enjoys });
       onProfile(saved);
       setStatus('Saved');
     } catch (e) {
@@ -47,7 +46,6 @@ export default function SettingsScreen({
       </View>
 
       <Field label="Name" value={name} onChange={setName} />
-      <Field label="Gender" value={gender} onChange={setGender} />
       <Field label="Enjoys" value={enjoys} onChange={setEnjoys} />
       <Pressable onPress={() => void save()} style={styles.button}>
         <Text style={styles.buttonText}>Save details</Text>
