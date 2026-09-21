@@ -111,10 +111,9 @@ export async function PATCH(request: Request) {
   const existing = await getProfile(key);
   if (!existing) return NextResponse.json({ error: "no profile yet" }, { status: 404 });
 
-  const edits = FIELDS.filter((field) => typeof body[field] === "string").map((field) => ({
-    field,
-    value: (body[field] as string).trim(),
-  }));
+  const edits = FIELDS.filter((field) => typeof body[field] === "string")
+    .map((field) => ({ field, value: (body[field] as string).trim() }))
+    .filter(({ field, value }) => existing[field] !== value);
   if (edits.some(({ field, value }) => field === "name" && !value)) {
     return NextResponse.json({ error: "name cannot be empty" }, { status: 400 });
   }
