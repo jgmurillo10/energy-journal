@@ -11,6 +11,7 @@ const FIELDS: { key: ProfileField; label: string }[] = [
 
 const METHOD_LABEL: Record<ExtractionMethod, string> = {
   "local-llm": "on-device model",
+  "cloud-llm": "cloud model",
   rules: "rules",
   user: "edited by you",
 };

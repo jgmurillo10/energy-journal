@@ -126,22 +126,48 @@ export function analyzeLocally(text: string, reportedMood?: Mood, reportedEnergy
 
 type LlmResult = { sentiment: number; mood: Mood; energy: number; summary: string; triggers: Trigger[] };
 
-async function analyzeWithOpenAi(text: string): Promise<LlmResult | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-  const prompt = `You analyze a personal journal entry. Return JSON with keys:
-sentiment (number -1..1), mood ("good"|"neutral"|"bad"), energy (integer 0..100 describing the person's energy battery),
-summary (one short sentence addressed to the person), triggers (array of {label, category, polarity:"positive"|"negative", evidence}).
-Triggers are the concrete things that caused the good or bad feelings. Entry:
-"""${text}"""`;
+export const CLOUD_MODEL_LABEL = "cloud model";
 
+/**
+ * Any OpenAI-compatible chat endpoint. OpenRouter is the default because it fronts Gemini and the
+ * rest without a per-vendor SDK; a plain OPENAI_API_KEY still works against api.openai.com.
+ */
+function llmConfig(): { url: string; apiKey: string; model: string } | null {
+  if (process.env.OPENROUTER_API_KEY) {
+    return {
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      apiKey: process.env.OPENROUTER_API_KEY,
+      model: process.env.LLM_MODEL ?? "google/gemini-3.5-flash-lite",
+    };
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return {
+      url: "https://api.openai.com/v1/chat/completions",
+      apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.LLM_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    };
+  }
+  return null;
+}
+
+export function hasCloudModel(): boolean {
+  return llmConfig() !== null;
+}
+
+export async function chatJson<T>(prompt: string): Promise<T | null> {
+  const config = llmConfig();
+  if (!config) return null;
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch(config.url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+        "HTTP-Referer": "https://energy-journal-rosy.vercel.app",
+        "X-Title": "Energy Journal",
+      },
       body: JSON.stringify({
-        model,
+        model: config.model,
         response_format: { type: "json_object" },
         messages: [{ role: "user", content: prompt }],
       }),
@@ -150,31 +176,55 @@ Triggers are the concrete things that caused the good or bad feelings. Entry:
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content;
     if (!content) return null;
-    const parsed = JSON.parse(content) as Partial<LlmResult>;
-    if (typeof parsed.sentiment !== "number" || !Array.isArray(parsed.triggers)) return null;
-    return {
-      sentiment: parsed.sentiment,
-      mood: parsed.mood ?? moodFromSentiment(parsed.sentiment),
-      energy: typeof parsed.energy === "number" ? parsed.energy : 50,
-      summary: parsed.summary ?? "",
-      triggers: parsed.triggers,
-    };
+    const cleaned = content.replace(/^```(?:json)?\s*|\s*```$/g, "");
+    return JSON.parse(cleaned) as T;
   } catch {
     return null;
   }
 }
 
-export async function analyze(text: string, reportedMood?: Mood, reportedEnergy?: number): Promise<Analysis> {
+async function analyzeWithLlm(text: string): Promise<LlmResult | null> {
+  const prompt = `You analyze a personal journal entry. Return JSON with keys:
+sentiment (number -1..1), mood ("good"|"neutral"|"bad"), energy (integer 0..100 describing the person's energy battery),
+summary (one short sentence addressed to the person), triggers (array of {label, category, polarity:"positive"|"negative", evidence}).
+Triggers are the concrete things that caused the good or bad feelings. Entry:
+"""${text}"""`;
+
+  const parsed = await chatJson<Partial<LlmResult>>(prompt);
+  if (!parsed || typeof parsed.sentiment !== "number" || !Array.isArray(parsed.triggers)) return null;
+  const moods: Mood[] = ["good", "neutral", "bad"];
+  return {
+    sentiment: parsed.sentiment,
+    mood: parsed.mood && moods.includes(parsed.mood) ? parsed.mood : moodFromSentiment(parsed.sentiment),
+    energy: typeof parsed.energy === "number" ? parsed.energy : 50,
+    summary: typeof parsed.summary === "string" ? parsed.summary : "",
+    triggers: parsed.triggers
+      .filter((t): t is Trigger => !!t && typeof t.label === "string")
+      .map((t) => ({
+        label: t.label,
+        category: typeof t.category === "string" ? t.category : t.label.toLowerCase(),
+        polarity: t.polarity === "negative" ? "negative" : "positive",
+        evidence: typeof t.evidence === "string" ? t.evidence : "",
+      })),
+  };
+}
+
+export async function analyze(
+  text: string,
+  reportedMood?: Mood,
+  reportedEnergy?: number,
+): Promise<Analysis & { analyzed_by: string }> {
   const local = analyzeLocally(text, reportedMood, reportedEnergy);
-  const llm = await analyzeWithOpenAi(text);
-  if (!llm) return local;
+  const llm = await analyzeWithLlm(text);
+  if (!llm) return { ...local, analyzed_by: "keyword rules" };
   const energy = reportedEnergy ?? Math.max(0, Math.min(100, Math.round(llm.energy)));
   return {
     sentiment: Math.max(-1, Math.min(1, llm.sentiment)),
     mood: reportedMood ?? llm.mood,
     energy,
     battery: energy,
-    triggers: llm.triggers.length ? llm.triggers : local.triggers,
+    triggers: llm.triggers.length ? llm.triggers.slice(0, 6) : local.triggers,
     summary: llm.summary || local.summary,
+    analyzed_by: CLOUD_MODEL_LABEL,
   };
 }

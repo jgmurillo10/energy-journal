@@ -3,6 +3,7 @@
  * People answer in full sentences ("My name is Juan Murillo"), so the lead-in has to go
  * before the value is stored, otherwise the dashboard greets "Hey My".
  */
+import type { ProfileField } from "./types";
 
 const NAME_LEAD_IN =
   /\b(?:my name(?:'s| is)?|i am|i'm|this is|they call me|you can call me|call me|it's|its)\s+/i;
@@ -60,4 +61,14 @@ export function extractEnjoys(raw: string): string {
     text = stripEdges(text.replace(ENJOYS_LEAD_IN, ""));
   }
   return text;
+}
+
+/** A model that rambles or invents is worse than the rules, so only short, grounded answers pass. */
+export function plausible(field: ProfileField, answer: string, transcript: string): boolean {
+  if (!answer || answer.length > (field === "enjoys" ? 120 : 40)) return false;
+  if (/\n/.test(answer)) return false;
+  if (field === "gender") return /^(male|female|non-binary|prefer not to say)$/i.test(answer);
+  const words = answer.toLowerCase().split(/\s+/);
+  const haystack = transcript.toLowerCase();
+  return words.every((word) => haystack.includes(word.replace(/[^\p{L}\p{N}]/gu, "")));
 }

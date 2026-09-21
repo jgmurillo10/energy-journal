@@ -46,7 +46,7 @@ export async function POST(request: Request) {
           summary: onDevice.summary ?? "",
           analyzed_by: "on-device model" as const,
         }
-      : { ...(await analyze(text, reportedMood, reportedEnergy)), analyzed_by: undefined };
+      : await analyze(text, reportedMood, reportedEnergy);
 
   const { key } = await currentOwner();
   const entry = await insertEntry(key, {
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     energy: analysis.energy,
     battery: analysis.battery,
     triggers: analysis.triggers,
-    analyzed_by: analysis.analyzed_by ?? (process.env.OPENAI_API_KEY ? "cloud model" : "keyword rules"),
+    analyzed_by: analysis.analyzed_by,
   });
 
   return NextResponse.json({ entry, summary: analysis.summary });

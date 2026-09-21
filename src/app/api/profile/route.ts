@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProfile, recordAudit, saveProfile } from "@/lib/db";
-import { extractEnjoys, extractGender, extractName } from "@/lib/extract";
+import { chatJson } from "@/lib/analyze";
+import { extractEnjoys, extractGender, extractName, plausible } from "@/lib/extract";
 import { currentOwner } from "@/lib/owner";
 import type { ExtractionMethod, Profile, ProfileField, RawAnswers } from "@/lib/types";
 
@@ -25,7 +26,25 @@ function fallback(field: ProfileField, transcript: string): string {
 }
 
 function isMethod(value: unknown): value is ExtractionMethod {
-  return value === "local-llm" || value === "rules" || value === "user";
+  return value === "local-llm" || value === "cloud-llm" || value === "rules" || value === "user";
+}
+
+/** One model call for every field the device could not extract with a model of its own. */
+async function extractWithCloud(raw: RawAnswers, fields: ProfileField[]): Promise<Partial<Record<ProfileField, string>>> {
+  if (!fields.length) return {};
+  const prompt = `Extract fields from spoken onboarding answers. Return JSON with exactly these keys: ${fields.join(", ")}.
+name: only the person's name as they said it. gender: one of Male, Female, Non-binary, Prefer not to say.
+enjoys: the activities they enjoy as a short phrase using their own words, without a lead-in like "I enjoy".
+Use an empty string when an answer is missing.
+${fields.map((field) => `${field} answer: """${raw[field]}"""`).join("\n")}`;
+  const parsed = await chatJson<Partial<Record<ProfileField, unknown>>>(prompt);
+  if (!parsed) return {};
+  const out: Partial<Record<ProfileField, string>> = {};
+  for (const field of fields) {
+    const value = typeof parsed[field] === "string" ? parsed[field].trim().replace(/[.]$/, "") : "";
+    if (plausible(field, value, raw[field])) out[field] = value;
+  }
+  return out;
 }
 
 export async function GET() {
@@ -42,13 +61,24 @@ export async function POST(request: Request) {
   const values = {} as Record<ProfileField, string>;
   const methods: Partial<Record<ProfileField, ExtractionMethod>> = {};
 
-  for (const field of FIELDS) {
-    const transcript = body[field]?.trim() ?? "";
-    raw[field] = transcript;
-    const device = body.processed?.[field]?.trim();
-    values[field] = device || fallback(field, transcript);
+  for (const field of FIELDS) raw[field] = body[field]?.trim() ?? "";
+
+  const needsModel = FIELDS.filter((field) => {
     const claimed = body.methods?.[field];
-    methods[field] = device && isMethod(claimed) ? claimed : "rules";
+    return raw[field] && !(body.processed?.[field]?.trim() && (claimed === "local-llm" || claimed === "user"));
+  });
+  const cloud = await extractWithCloud(raw, needsModel);
+
+  for (const field of FIELDS) {
+    const device = body.processed?.[field]?.trim();
+    const claimed = body.methods?.[field];
+    if (cloud[field]) {
+      values[field] = cloud[field];
+      methods[field] = "cloud-llm";
+    } else {
+      values[field] = device || fallback(field, raw[field]);
+      methods[field] = device && isMethod(claimed) ? claimed : "rules";
+    }
   }
 
   if (!values.name) return NextResponse.json({ error: "name is required" }, { status: 400 });

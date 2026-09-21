@@ -10,7 +10,7 @@ export type Trigger = {
 export type ProfileField = "name" | "gender" | "enjoys";
 
 /** How a stored value was produced from the transcript. */
-export type ExtractionMethod = "local-llm" | "rules" | "user";
+export type ExtractionMethod = "local-llm" | "cloud-llm" | "rules" | "user";
 
 /** What was actually said, kept next to the cleaned value shown in the UI. */
 export type RawAnswers = Record<ProfileField, string>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { extractEnjoys, extractGender, extractName } from "./extract";
+import { extractEnjoys, extractGender, extractName, plausible } from "./extract";
 import type { ExtractionMethod, Mood, ProfileField, Trigger } from "./types";
 
 /**
@@ -47,16 +47,6 @@ function rules(field: ProfileField, transcript: string): string {
   if (field === "name") return extractName(transcript);
   if (field === "gender") return extractGender(transcript);
   return extractEnjoys(transcript);
-}
-
-/** A model that rambles or invents is worse than the rules, so only short, grounded answers pass. */
-function plausible(field: ProfileField, answer: string, transcript: string): boolean {
-  if (!answer || answer.length > (field === "enjoys" ? 120 : 40)) return false;
-  if (/\n/.test(answer)) return false;
-  if (field === "gender") return /^(male|female|non-binary|prefer not to say)$/i.test(answer);
-  const words = answer.toLowerCase().split(/\s+/);
-  const haystack = transcript.toLowerCase();
-  return words.every((word) => haystack.includes(word.replace(/[^\p{L}\p{N}]/gu, "")));
 }
 
 export async function extractField(

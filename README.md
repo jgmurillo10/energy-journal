@@ -4,7 +4,7 @@ A voice-first journal for tracking your energy battery and the things that charg
 
 - **Audio onboarding** — the app asks for your name, gender, what you enjoy and how your day went. Questions are spoken with ElevenLabs TTS; answers are recorded in the browser and transcribed with ElevenLabs Scribe (`scribe_v1`).
 - **Journaling** — speak or type an entry, optionally tag the mood and your battery level.
-- **Trigger detection** — each entry is analysed for what lifted or drained you. Uses an LLM when `OPENAI_API_KEY` is set, otherwise a local lexicon/category heuristic.
+- **Trigger detection** — each entry is analysed for what lifted or drained you. Uses a cloud LLM (Gemini via OpenRouter) when `OPENROUTER_API_KEY` or `OPENAI_API_KEY` is set, otherwise a local lexicon/category heuristic.
 - **Timeline & insights** — entries over time, an energy curve, mood mix, streak, and the recurring boosters/drainers.
 - **Private journals** — onboarding runs anonymously against a signed device cookie, then Google or a magic link ties that journal to an account so it follows you to other devices. Export/import moves it as JSON.
 
