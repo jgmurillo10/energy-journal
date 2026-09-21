@@ -16,7 +16,6 @@ export type Trigger = {
 
 export type Profile = {
   name: string;
-  gender: string;
   enjoys: string;
   first_day: string;
   created_at: string;
@@ -103,7 +102,20 @@ export function saveProfile(body: Record<string, unknown>) {
   });
 }
 
-export function updateProfile(fields: Partial<Pick<Profile, 'name' | 'gender' | 'enjoys'>>) {
+export type OnboardingStep = 'name' | 'enjoys' | 'firstDay';
+export type OnboardingTurn = {
+  reply: string;
+  value: string;
+  method: 'local-llm' | 'cloud-llm' | 'rules' | 'user';
+  skipped: boolean;
+};
+
+/** The model reacts to an onboarding answer and pulls the value out of it. */
+export function onboardingTurn(body: { step: OnboardingStep; answer: string; name: string; nextQuestion: string }) {
+  return request<OnboardingTurn>('/api/onboarding', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateProfile(fields: Partial<Pick<Profile, 'name' | 'enjoys'>>) {
   return request<{ profile: Profile }>('/api/profile', {
     method: 'PATCH',
     body: JSON.stringify(fields),

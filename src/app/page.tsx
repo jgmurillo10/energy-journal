@@ -78,7 +78,7 @@ export default function Home() {
         <div>
           <p className="text-xs uppercase tracking-[0.25em] text-emerald-300/70">Energy journal</p>
           <h1 className="mt-2 text-3xl font-semibold text-white">
-            Hey {profile.name.split(" ")[0]}, how&apos;s your battery?
+            {profile.name ? `Hey ${profile.name.split(" ")[0]}, how's your battery?` : "How's your battery today?"}
           </h1>
           {profile.enjoys && (
             <p className="mt-1 line-clamp-2 max-w-xl text-sm text-white/40">You told me you enjoy {profile.enjoys}</p>

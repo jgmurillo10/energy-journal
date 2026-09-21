@@ -1,6 +1,6 @@
 "use client";
 
-import { extractEnjoys, extractGender, extractName, plausible } from "./extract";
+import { extractEnjoys, extractName, plausible } from "./extract";
 import type { ExtractionMethod, Mood, ProfileField, Trigger } from "./types";
 
 /**
@@ -39,13 +39,11 @@ export async function localLlmAvailable(): Promise<boolean> {
 
 const INSTRUCTIONS: Record<ProfileField, string> = {
   name: "Reply with only the person's name, nothing else.",
-  gender: "Reply with only one of: Male, Female, Non-binary, Prefer not to say.",
   enjoys: "Reply with only the activities they enjoy, as a short phrase without a leading verb like 'I enjoy'.",
 };
 
 function rules(field: ProfileField, transcript: string): string {
   if (field === "name") return extractName(transcript);
-  if (field === "gender") return extractGender(transcript);
   return extractEnjoys(transcript);
 }
 

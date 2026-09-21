@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProfile, recordAudit, saveProfile } from "@/lib/db";
 import { chatJson } from "@/lib/analyze";
-import { extractEnjoys, extractGender, extractName, plausible } from "@/lib/extract";
+import { extractEnjoys, extractName, isDecline, plausible } from "@/lib/extract";
 import { currentOwner } from "@/lib/owner";
 import type { ExtractionMethod, Profile, ProfileField, RawAnswers } from "@/lib/types";
 
@@ -9,7 +9,6 @@ export const dynamic = "force-dynamic";
 
 type Body = {
   name?: string;
-  gender?: string;
   enjoys?: string;
   firstDay?: string;
   /** Values already extracted on the device, with the method that produced each one. */
@@ -17,11 +16,11 @@ type Body = {
   methods?: Partial<Record<ProfileField, ExtractionMethod>>;
 };
 
-const FIELDS: ProfileField[] = ["name", "gender", "enjoys"];
+const FIELDS: ProfileField[] = ["name", "enjoys"];
 
 function fallback(field: ProfileField, transcript: string): string {
+  if (isDecline(transcript)) return "";
   if (field === "name") return extractName(transcript);
-  if (field === "gender") return extractGender(transcript);
   return extractEnjoys(transcript);
 }
 
@@ -33,9 +32,9 @@ function isMethod(value: unknown): value is ExtractionMethod {
 async function extractWithCloud(raw: RawAnswers, fields: ProfileField[]): Promise<Partial<Record<ProfileField, string>>> {
   if (!fields.length) return {};
   const prompt = `Extract fields from spoken onboarding answers. Return JSON with exactly these keys: ${fields.join(", ")}.
-name: only the person's name as they said it. gender: one of Male, Female, Non-binary, Prefer not to say.
+name: only the person's name as they said it.
 enjoys: the activities they enjoy as a short phrase using their own words, without a lead-in like "I enjoy".
-Use an empty string when an answer is missing.
+Use an empty string when an answer is missing or the person declines to answer ("skip", "I'd rather not say").
 ${fields.map((field) => `${field} answer: """${raw[field]}"""`).join("\n")}`;
   const parsed = await chatJson<Partial<Record<ProfileField, unknown>>>(prompt);
   if (!parsed) return {};
@@ -65,7 +64,8 @@ export async function POST(request: Request) {
 
   const needsModel = FIELDS.filter((field) => {
     const claimed = body.methods?.[field];
-    return raw[field] && !(body.processed?.[field]?.trim() && (claimed === "local-llm" || claimed === "user"));
+    if (!raw[field] || isDecline(raw[field])) return false;
+    return !(body.processed?.[field]?.trim() && (claimed === "local-llm" || claimed === "cloud-llm" || claimed === "user"));
   });
   const cloud = await extractWithCloud(raw, needsModel);
 
@@ -75,13 +75,14 @@ export async function POST(request: Request) {
     if (cloud[field]) {
       values[field] = cloud[field];
       methods[field] = "cloud-llm";
+    } else if (isDecline(raw[field])) {
+      values[field] = "";
+      methods[field] = "rules";
     } else {
       values[field] = device || fallback(field, raw[field]);
       methods[field] = device && isMethod(claimed) ? claimed : "rules";
     }
   }
-
-  if (!values.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
   const profile: Profile = await saveProfile(key, {
     ...values,
@@ -114,9 +115,6 @@ export async function PATCH(request: Request) {
   const edits = FIELDS.filter((field) => typeof body[field] === "string")
     .map((field) => ({ field, value: (body[field] as string).trim() }))
     .filter(({ field, value }) => existing[field] !== value);
-  if (edits.some(({ field, value }) => field === "name" && !value)) {
-    return NextResponse.json({ error: "name cannot be empty" }, { status: 400 });
-  }
 
   const methods = { ...existing.methods };
   const next = { ...existing };

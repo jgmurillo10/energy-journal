@@ -19,6 +19,10 @@ const MOOD_EMOJI: Record<string, string> = { good: '🙂', neutral: '😐', bad:
 /** Journal answers run longer than onboarding ones, so give them a slower pause. */
 const SILENCE_MS = 3000;
 
+const INITIAL_VISIBLE = 3;
+/** Which analyser produced a note is a debugging aid, only shown in development builds. */
+const SHOW_ANALYZER = __DEV__;
+
 export default function DashboardScreen({ profile, onOpenSettings }: { profile: Profile; onOpenSettings: () => void }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [insights, setInsights] = useState<Insights | null>(null);
@@ -27,6 +31,7 @@ export default function DashboardScreen({ profile, onOpenSettings }: { profile: 
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -90,7 +95,7 @@ export default function DashboardScreen({ profile, onOpenSettings }: { profile: 
       <View style={styles.header}>
         <View>
           <Text style={styles.kicker}>Energy journal</Text>
-          <Text style={styles.hello}>Hey {profile.name.split(' ')[0]}</Text>
+          <Text style={styles.hello}>{profile.name ? `Hey ${profile.name.split(' ')[0]}` : "How's your battery?"}</Text>
         </View>
         <Pressable onPress={onOpenSettings} hitSlop={14} style={styles.cog}>
           <Text style={styles.cogText}>⚙</Text>
@@ -122,7 +127,7 @@ export default function DashboardScreen({ profile, onOpenSettings }: { profile: 
               ? 'Listening — tap again when you are done'
               : micState === 'transcribing'
                 ? 'Thinking...'
-                : 'Tap the orb to add a note'}
+                : 'Tap to check in'}
         </Text>
 
         {typing ? (
@@ -169,14 +174,14 @@ export default function DashboardScreen({ profile, onOpenSettings }: { profile: 
       {loading && entries.length === 0 ? (
         <ActivityIndicator color="#34d399" />
       ) : entries.length === 0 ? (
-        <Text style={styles.empty}>Nothing yet — tap the orb and say how your day is going.</Text>
+        <Text style={styles.empty}>Nothing yet — tap to check in and say how your day is going.</Text>
       ) : (
-        entries.map((entry) => (
+        (showAll ? entries : entries.slice(0, INITIAL_VISIBLE)).map((entry) => (
           <View key={entry.id} style={styles.card}>
             <View style={styles.cardTop}>
               <Text style={styles.mood}>{MOOD_EMOJI[entry.mood] ?? '😐'}</Text>
               <Text style={styles.when}>{new Date(entry.created_at).toLocaleString()}</Text>
-              {entry.analyzed_by && <Text style={styles.meta}>· {entry.analyzed_by}</Text>}
+              {SHOW_ANALYZER && entry.analyzed_by && <Text style={styles.meta}>· {entry.analyzed_by}</Text>}
             </View>
             <View style={styles.cardTop}>
               <Text style={styles.battery}>🔋 {entry.battery}%</Text>
@@ -199,6 +204,15 @@ export default function DashboardScreen({ profile, onOpenSettings }: { profile: 
             </View>
           </View>
         ))
+      )}
+      {entries.length > INITIAL_VISIBLE && (
+        <Pressable onPress={() => setShowAll((value) => !value)} style={styles.more} hitSlop={10}>
+          <Text style={styles.link}>
+            {showAll
+              ? 'Show fewer'
+              : `Show ${entries.length - INITIAL_VISIBLE} older ${entries.length - INITIAL_VISIBLE === 1 ? 'note' : 'notes'}`}
+          </Text>
+        </Pressable>
       )}
     </ScrollView>
   );
@@ -260,6 +274,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   kicker: { color: 'rgba(52,211,153,0.8)', letterSpacing: 3, textTransform: 'uppercase', fontSize: 10 },
   hello: { color: '#fff', fontSize: 26, fontWeight: '600', marginTop: 4 },
+  more: { alignSelf: 'center', marginTop: 8, marginBottom: 24 },
   cog: {
     width: 40,
     height: 40,

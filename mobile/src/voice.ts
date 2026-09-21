@@ -48,12 +48,14 @@ export async function speak(text: string): Promise<void> {
 
 export function stopSpeaking(): void {
   if (!current) return;
+  const player = current;
+  current = null;
   try {
-    current.remove();
+    player.pause();
+    player.remove();
   } catch {
     // already released
   }
-  current = null;
 }
 
 /** Records with the phone mic and transcribes through ElevenLabs Scribe on the API. */
@@ -68,6 +70,9 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs 
   const maxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const callbackRef = useRef(onTranscript);
   callbackRef.current = onTranscript;
+  /** The hook releases the native recorder on unmount; calls after that throw NotFoundException. */
+  const mountedRef = useRef(true);
+  const finishingRef = useRef(false);
 
   const level = status.metering == null ? 0 : Math.max(0, Math.min(1, (status.metering + 60) / 60));
 
@@ -95,10 +100,19 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs 
   }, []);
 
   const finish = useCallback(async () => {
+    if (finishingRef.current || !mountedRef.current) return;
+    finishingRef.current = true;
     if (maxTimer.current) clearTimeout(maxTimer.current);
     maxTimer.current = null;
-    await recorder.stop();
-    const uri = recorder.uri;
+    let uri: string | null = null;
+    try {
+      if (recorder.isRecording) await recorder.stop();
+      uri = recorder.uri;
+    } catch {
+      // The recorder was never started or has already been released.
+    }
+    finishingRef.current = false;
+    if (!mountedRef.current) return;
     if (cancelledRef.current || !uri) {
       setState('idle');
       return;
@@ -124,6 +138,7 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs 
       spokeRef.current = false;
       quietSinceRef.current = null;
       await recorder.prepareToRecordAsync();
+      if (!mountedRef.current) return;
       recorder.record();
       setState('recording');
       maxTimer.current = setTimeout(() => void finishRef.current(), MAX_RECORDING_MS);
@@ -155,12 +170,13 @@ export function useVoiceCapture(onTranscript: (text: string) => void, silenceMs 
     if (Date.now() - quietSinceRef.current > silenceMs) void finishRef.current();
   }, [state, status.metering, silenceMs]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
       if (maxTimer.current) clearTimeout(maxTimer.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   return { state, error, level, start, stop, cancel, setError };
 }

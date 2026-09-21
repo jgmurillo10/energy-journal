@@ -1,6 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import type { Entry } from "@/lib/types";
+
+const INITIAL_VISIBLE = 3;
+/** Which analyser produced a note is a debugging aid, not something to show people yet. */
+const SHOW_ANALYZER = process.env.NODE_ENV === "development";
 
 const MOOD_STYLE: Record<Entry["mood"], { dot: string; label: string; emoji: string }> = {
   good: { dot: "bg-emerald-400", label: "Good day", emoji: "🙂" },
@@ -19,6 +24,10 @@ function formatDate(iso: string): string {
 }
 
 export default function Timeline({ entries, onDelete }: { entries: Entry[]; onDelete: (id: number) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? entries : entries.slice(0, INITIAL_VISIBLE);
+  const hidden = entries.length - visible.length;
+
   if (entries.length === 0) {
     return (
       <div className="rounded-3xl border border-dashed border-white/15 p-10 text-center text-white/40">
@@ -29,7 +38,7 @@ export default function Timeline({ entries, onDelete }: { entries: Entry[]; onDe
 
   return (
     <ol className="relative space-y-4 border-l border-white/10 pl-6">
-      {entries.map((entry) => {
+      {visible.map((entry) => {
         const style = MOOD_STYLE[entry.mood];
         return (
           <li key={entry.id} className="relative">
@@ -40,7 +49,7 @@ export default function Timeline({ entries, onDelete }: { entries: Entry[]; onDe
                   <span>{style.emoji}</span>
                   <span>{formatDate(entry.created_at)}</span>
                   {entry.source === "voice" && <span className="text-xs text-emerald-300/70">· voice</span>}
-                  {entry.analyzed_by && <span className="text-xs text-white/25">· {entry.analyzed_by}</span>}
+                  {SHOW_ANALYZER && entry.analyzed_by && <span className="text-xs text-white/25">· {entry.analyzed_by}</span>}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="rounded-full bg-black/30 px-3 py-1 text-xs font-medium text-emerald-300">
@@ -80,6 +89,28 @@ export default function Timeline({ entries, onDelete }: { entries: Entry[]; onDe
           </li>
         );
       })}
+      {hidden > 0 && (
+        <li className="relative pt-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="text-xs uppercase tracking-[0.2em] text-white/40 transition hover:text-white/80"
+          >
+            Show {hidden} older {hidden === 1 ? "note" : "notes"}
+          </button>
+        </li>
+      )}
+      {expanded && entries.length > INITIAL_VISIBLE && (
+        <li className="relative pt-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="text-xs uppercase tracking-[0.2em] text-white/40 transition hover:text-white/80"
+          >
+            Show fewer
+          </button>
+        </li>
+      )}
     </ol>
   );
 }

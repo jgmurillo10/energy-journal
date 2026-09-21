@@ -11,24 +11,30 @@ import {
   View,
 } from 'react-native';
 import Orb, { type OrbMode } from './Orb';
-import { addEntry, saveProfile, type Profile } from './api';
-import { firstNameFrom } from './extractName';
+import { addEntry, onboardingTurn, saveProfile, type OnboardingStep, type OnboardingTurn, type Profile } from './api';
 import { speak, stopSpeaking, useVoiceCapture } from './voice';
 
-type StepKey = 'name' | 'gender' | 'enjoys' | 'firstDay';
+type StepKey = OnboardingStep;
 
 const STEPS: { key: StepKey; question: (name: string) => string }[] = [
-  { key: 'name', question: () => "Hi. I'm your energy journal. What's your name?" },
-  {
-    key: 'gender',
-    question: (name) =>
-      name ? `Nice to meet you, ${name}. What gender do you identify with?` : 'Nice to meet you. What gender do you identify with?',
-  },
-  { key: 'enjoys', question: (name) => (name ? `What do you truly enjoy doing, ${name}?` : 'What do you truly enjoy doing?') },
-  { key: 'firstDay', question: (name) => (name ? `Last one, ${name}. How was your day today?` : 'Last one. How was your day today?') },
+  { key: 'name', question: () => "Hi, I'm your energy journal. What should I call you?" },
+  { key: 'enjoys', question: (name) => (name ? `So ${name}, what do you truly enjoy doing?` : 'What do you truly enjoy doing?') },
+  { key: 'firstDay', question: () => 'And how was your day today?' },
 ];
 
-type Phase = 'intro' | 'speaking' | 'listening' | 'saving';
+const SKIP_REPLY = 'No problem, we can skip that.';
+
+/** Asks the model to react to the answer and pull out the value; falls back to a plain acknowledgement. */
+async function converse(step: StepKey, answer: string, name: string, nextQuestion: string): Promise<OnboardingTurn> {
+  if (!answer.trim()) return { reply: SKIP_REPLY, value: '', method: 'rules', skipped: true };
+  try {
+    return await onboardingTurn({ step, answer, name, nextQuestion });
+  } catch {
+    return { reply: name ? `Thanks, ${name}.` : 'Thanks.', value: '', method: 'rules', skipped: false };
+  }
+}
+
+type Phase = 'intro' | 'speaking' | 'listening' | 'thinking' | 'saving';
 
 export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile) => void }) {
   const [phase, setPhase] = useState<Phase>('intro');
@@ -38,14 +44,19 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [firstName, setFirstName] = useState('');
+  const [lead, setLead] = useState('');
   const firstNameRef = useRef('');
-  const answersRef = useRef<Record<StepKey, string>>({ name: '', gender: '', enjoys: '', firstDay: '' });
+  const answersRef = useRef<Record<StepKey, string>>({ name: '', enjoys: '', firstDay: '' });
+  const processedRef = useRef<Partial<Record<'name' | 'enjoys', string>>>({});
+  const methodsRef = useRef<Partial<Record<'name' | 'enjoys', OnboardingTurn['method']>>>({});
+  /** Bumped whenever an answer is committed so an interrupted question does not reopen the mic. */
+  const turnRef = useRef(0);
 
   const save = useCallback(
     async (answers: Record<StepKey, string>) => {
       setPhase('saving');
       try {
-        const { profile } = await saveProfile({ ...answers, firstDay: answers.firstDay });
+        const { profile } = await saveProfile({ ...answers, processed: processedRef.current, methods: methodsRef.current });
         if (answers.firstDay.trim()) await addEntry(answers.firstDay, 'voice');
         onDone(profile);
       } catch (e) {
@@ -58,16 +69,20 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
 
   const startRef = useRef<() => Promise<void>>(async () => {});
 
-  const ask = useCallback(async (index: number) => {
+  const ask = useCallback(async (index: number, reply = '') => {
+    const turn = turnRef.current;
     setStepIndex(index);
     setHeard('');
     setDraft('');
+    setLead(reply);
     setPhase('speaking');
     try {
-      await speak(STEPS[index].question(firstNameRef.current));
+      const question = STEPS[index].question(firstNameRef.current);
+      await speak(reply ? `${reply} ${question}` : question);
     } catch {
       setError('Voice playback is unavailable — the question is written below.');
     }
+    if (turn !== turnRef.current) return;
     setPhase('listening');
     await startRef.current();
   }, []);
@@ -75,18 +90,37 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
   const commit = useCallback(
     (index: number, value: string) => {
       const key = STEPS[index].key;
+      turnRef.current += 1;
       answersRef.current = { ...answersRef.current, [key]: value };
       setHeard(value);
-      if (index === STEPS.length - 1) {
-        void save(answersRef.current);
-        return;
-      }
-      if (key === 'name') {
-        const first = firstNameFrom(value);
-        firstNameRef.current = first;
-        setFirstName(first);
-      }
-      setTimeout(() => void ask(index + 1), 700);
+      setTyping(false);
+      setPhase('thinking');
+      void (async () => {
+        const last = index === STEPS.length - 1;
+        const nextQuestion = last ? '' : STEPS[index + 1].question(firstNameRef.current);
+        const turn = await converse(key, value, firstNameRef.current, nextQuestion);
+        if (key !== 'firstDay') {
+          processedRef.current[key] = turn.value;
+          methodsRef.current[key] = turn.method;
+        }
+        if (key === 'name') {
+          const first = turn.value.split(' ')[0] ?? '';
+          firstNameRef.current = first;
+          setFirstName(first);
+        }
+        if (last) {
+          setLead(turn.reply);
+          setPhase('speaking');
+          try {
+            await speak(`${turn.reply} Let's get you set up.`);
+          } catch {
+            // Saving is what matters; the reply is a nicety.
+          }
+          void save(answersRef.current);
+          return;
+        }
+        void ask(index + 1, turn.reply);
+      })();
     },
     [ask, save],
   );
@@ -104,26 +138,37 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
       ? 'speaking'
       : micState === 'recording'
         ? 'listening'
-        : micState === 'transcribing' || phase === 'saving'
+        : micState === 'transcribing' || phase === 'saving' || phase === 'thinking'
           ? 'thinking'
           : 'idle';
 
   const caption =
     phase === 'intro'
-      ? 'Tap the orb to begin'
+      ? 'Tap to begin'
       : phase === 'saving'
         ? 'Saving your details...'
-        : micState === 'transcribing'
+        : micState === 'transcribing' || phase === 'thinking'
           ? 'Thinking...'
           : micState === 'recording'
             ? 'Listening — tap again when you are done'
             : phase === 'speaking'
               ? 'Speaking...'
-              : 'Tap the orb to answer';
+              : 'Tap to answer';
+
+  const busy = phase === 'thinking' || phase === 'saving';
+
+  function skip() {
+    stopSpeaking();
+    cancel();
+    Keyboard.dismiss();
+    setDraft('');
+    commit(stepIndex, '');
+  }
 
   function handleOrbPress() {
     setError(null);
     setMicError(null);
+    if (busy) return;
     if (phase === 'intro') {
       void ask(0);
       return;
@@ -150,9 +195,12 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.kicker}>{firstName ? `Hey ${firstName}` : 'Energy journal'}</Text>
-      <Text style={styles.question}>{phase === 'intro' ? "Let's set up your journal." : STEPS[stepIndex].question(firstName)}</Text>
+      {!!lead && phase !== 'intro' && <Text style={styles.lead}>{lead}</Text>}
+      <Text style={styles.question}>
+        {phase === 'intro' ? "Let's set up your journal." : phase === 'saving' ? 'Setting things up.' : STEPS[stepIndex].question(firstName)}
+      </Text>
 
-      <Orb mode={mode} level={level} onPress={handleOrbPress} disabled={phase === 'saving'} />
+      <Orb mode={mode} level={level} onPress={handleOrbPress} disabled={busy} />
 
       {micState === 'recording' ? (
         <Pressable onPress={cancel} style={styles.cancel} hitSlop={12}>
@@ -167,7 +215,13 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
       {!!heard && <Text style={styles.heard}>“{heard}”</Text>}
       {(error ?? micError) && <Text style={styles.error}>{error ?? micError}</Text>}
 
-      {phase !== 'intro' && phase !== 'saving' && (
+      {phase !== 'intro' && !busy && (
+        <Pressable onPress={skip} style={styles.skip} hitSlop={10}>
+          <Text style={styles.link}>Skip this question</Text>
+        </Pressable>
+      )}
+
+      {phase !== 'intro' && !busy && (
         <View style={styles.typeArea}>
           {typing ? (
             <>
@@ -208,7 +262,9 @@ export default function OnboardingScreen({ onDone }: { onDone: (profile: Profile
 const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   kicker: { color: 'rgba(52,211,153,0.8)', letterSpacing: 3, textTransform: 'uppercase', fontSize: 11 },
+  lead: { color: 'rgba(255,255,255,0.5)', fontSize: 17, textAlign: 'center', marginTop: 14, lineHeight: 24 },
   question: { color: '#fff', fontSize: 24, textAlign: 'center', marginTop: 14, marginBottom: 36, lineHeight: 32 },
+  skip: { marginTop: 22 },
   cancel: {
     marginTop: 22,
     width: 38,
