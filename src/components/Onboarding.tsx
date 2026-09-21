@@ -48,6 +48,8 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
   const [error, setError] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lead, setLead] = useState("");
+  /** True once the final answer is in and the closing acknowledgement is playing. */
+  const [closing, setClosing] = useState(false);
   const answersRef = useRef<Record<StepKey, string>>({ name: "", enjoys: "", firstDay: "" });
   const processedRef = useRef<Partial<Record<ProfileField, string>>>({});
   const methodsRef = useRef<Partial<Record<ProfileField, ExtractionMethod>>>({});
@@ -77,6 +79,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
         onDone(profile);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong");
+        setClosing(false);
         setPhase("listening");
       }
     },
@@ -133,6 +136,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
         }
         if (last) {
           setLead(turn.reply);
+          setClosing(true);
           setPhase("speaking");
           try {
             await speak(`${turn.reply} Let's get you set up.`, setSpeechLevel);
@@ -239,7 +243,7 @@ export default function Onboarding({ onDone }: { onDone: (profile: Profile) => v
         >
           {phase === "intro" || phase === "permission" ? (
             "Let's set up your energy journal."
-          ) : phase === "saving" || (phase === "speaking" && stepIndex === STEPS.length - 1 && lead) ? (
+          ) : phase === "saving" || closing ? (
             lead || "Setting things up."
           ) : (
             <>
